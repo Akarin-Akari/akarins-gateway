@@ -1,0 +1,53 @@
+[project]
+name = "akarins-gateway"
+version = "1.0.0"
+description = "Akarin's Gateway - A standalone API gateway with multi-backend support (ZeroGravity, Copilot, Kiro, Public Station)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Akari", email = "akarinzhang@foxmail.com"},
+]
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "httpx[socks]>=0.27.0",
+    "hypercorn>=0.17.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
+    "aiosqlite>=0.20.0",
+    "curl_cffi>=0.7.0",
+    "aiofiles>=24.0.0",
+]
+
+[project.optional-dependencies]
+tls = [
+    "tls_client>=1.0.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+]
+
+[project.scripts]
+akarins-gateway = "akarins_gateway.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["akarins_gateway"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

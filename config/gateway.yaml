@@ -1,0 +1,1020 @@
+# Gateway 后端配置
+#
+# 配置说明：
+# - enabled: 是否启用该后端（支持环境变量替换）
+# - priority: 优先级（数字越小优先级越高）
+# - base_url: 后端服务地址
+# - models: 支持的模型列表（"*" 表示支持所有模型）
+# - timeout: 普通请求超时时间（秒）
+# - stream_timeout: 流式请求超时时间（秒）
+# - max_retries: 最大重试次数
+#
+# 环境变量替换语法：${VAR_NAME:default_value}
+# 例如：${COPILOT_ENABLED:true} 表示从环境变量 COPILOT_ENABLED 读取，默认值为 true
+
+backends:
+  # ==================== [NEW 2026-02-20] ZeroGravity MITM Proxy ====================
+  # ZeroGravity: Rust-based MITM proxy using official Antigravity LS binary
+  # Highest priority — traffic fingerprint indistinguishable from real Antigravity
+  # Headless mode: standalone LS + HTTPS_PROXY MITM, no Antigravity app needed
+  zerogravity:
+    enabled: ${ZEROGRAVITY_ENABLED:true}
+    priority: 0  # 最高优先级：流量指纹不可区分
+    base_url: ${ZEROGRAVITY_BASE_URL:http://127.0.0.1:8880/v1}
+    api_format: openai  # ZG exposes OpenAI-compatible API
+    models:
+      # Claude 4.6 series
+      - claude-opus-4.6
+      - claude-opus-4-6
+      - claude-sonnet-4.6
+      - claude-sonnet-4-6
+      # Gemini 3.1 Pro series (upstream v1.2.0 — replaces sunset gemini-3-pro)
+      - gemini-3.1-pro
+      - gemini-3.1-pro-high
+      - gemini-3.1-pro-low
+      # Gemini 3 Flash
+      - gemini-3-flash
+    timeout: 120
+    stream_timeout: 600
+    max_retries: 2
+  # ===========================================================================
+
+  # Antigravity 后端 - 支持 Claude、Gemini 等模型
+  # [FIX 2026-02-28] Cluster mode: gcli2api on port 7862 as antigravity backend
+  # Set ANTIGRAVITY_ENABLED=false for standalone mode (no gcli2api dependency)
+  gcli2api-antigravity:
+    enabled: ${ANTIGRAVITY_ENABLED:true}
+    priority: 1
+    base_url: ${ANTIGRAVITY_BASE_URL:http://127.0.0.1:7862/antigravity/v1}
+    models: ["*"]  # 支持所有模型
+    timeout: 60
+    stream_timeout: 300
+    max_retries: 2
+
+  # ==================== [NEW 2026-02-06] Antigravity Tools ====================
+  # Antigravity Tools 作为自研 Antigravity 的 fallback
+  # 当自研后端凭证不可用时（完整降级条件），自动降级到这里
+  # ⚠️ Disabled: standalone mode — no antigravity-tools (port 9046) dependency
+  antigravity-tools:
+    enabled: ${ANTIGRAVITY_TOOLS_ENABLED:false}
+    priority: 1.5  # 在 gcli2api-antigravity (1) 之后，kiro-gateway (2) 之前
+    base_url: ${ANTIGRAVITY_TOOLS_BASE_URL:http://127.0.0.1:9046/v1}
+    api_format: anthropic  # 使用 Anthropic Messages 格式
+    endpoint_suffix: "?beta=true"  # 特殊端点后缀
+    # 支持的模型列表（与自研 gcli2api-antigravity 一致：Gemini + Claude 系列）
+    models:
+      # Claude 4.5 系列（主要目标）
+      - claude-opus-4.5
+      - claude-sonnet-4.5
+      # Gemini 系列
+      - gemini-2.5-pro
+      - gemini-2.5-flash
+      - gemini-3-pro
+      - gemini-3-pro-high
+      - gemini-3-flash
+      # GPT 系列
+      - gpt-4
+      - gpt-4o
+      - gpt-5
+      - gpt-5.1
+      - gpt-5.2
+    timeout: 120
+    stream_timeout: 600
+    max_retries: 2
+  # ===========================================================================
+
+  # Copilot 后端 - 支持 GPT、O1、O3 等 OpenAI 模型
+  copilot:
+    enabled: ${COPILOT_ENABLED:true}
+    priority: 2
+    base_url: "http://127.0.0.1:8141/v1"
+    models:
+      - gpt-4
+      - gpt-4-turbo
+      - gpt-4o
+      - gpt-4o-mini
+      - gpt-5
+      - gpt-5.1
+      - gpt-5.2
+      - o1
+      - o1-mini
+      - o1-preview
+      - o3
+      - o3-mini
+    timeout: 120
+    stream_timeout: 600
+    max_retries: 3
+
+  # Kiro Gateway 后端 - 第三方网关（可选）
+  # [FIX 2026-02-26] 更新模型列表为实际支持的模型（移除不支持的 Opus 系列）
+  kiro-gateway:
+    enabled: ${KIRO_GATEWAY_ENABLED:true}
+    priority: 2
+    base_url: ${KIRO_GATEWAY_ENDPOINT:http://127.0.0.1:9876/v1}
+    models:
+      - claude-sonnet-4.5
+      - claude-sonnet-4
+      - claude-haiku-4.5
+      - deepseek-3.2
+      - minimax-m2.1
+      - qwen3-coder-next
+    timeout: 180
+    stream_timeout: 900
+    max_retries: 2
+
+  # Ruoli API 后端 - 公益站 Claude API (OpenAI 格式)
+  # 优先级在 Kiro 之后，AnyRouter 之前（公益站顺序）
+  ruoli:
+    enabled: ${RUOLI_ENABLED:true}
+    priority: 3
+    base_url: ${RUOLI_ENDPOINT:https://api.ruoli.dev/v1}
+    api_key: ${RUOLI_API_KEY:}  # ⚠️ 必须通过环境变量配置，不要硬编码！
+    models:
+      - claude-sonnet-4.5
+      - claude-opus-4.5
+    timeout: 120
+    stream_timeout: 600
+    max_retries: 2
+
+  # ==================== [DISABLED 2026-02-15] newAPI 系公益站 ====================
+  # DKAPI/Cifang API Keys 已失效，待上游恢复后取消注释即可重新启用
+  # dkapi:
+  #   enabled: ${DKAPI_ENABLED:true}
+  #   priority: 3.2
+  #   base_url: ${DKAPI_ENDPOINT:https://api.dkjsiogu.me/v1}
+  #   api_key: ${DKAPI_API_KEY:}
+  #   models:
+  #     - claude-opus-4.6
+  #     - claude-opus-4.5
+  #     - claude-sonnet-4.5
+  #     - claude-haiku-4.5
+  #   timeout: 120
+  #   stream_timeout: 600
+  #   max_retries: 2
+
+  # cifang:
+  #   enabled: ${CIFANG_ENABLED:true}
+  #   priority: 3.4
+  #   base_url: ${CIFANG_ENDPOINT:https://cifang.xyz/v1}
+  #   api_key: ${CIFANG_API_KEY:}
+  #   models:
+  #     - claude-opus-4.6
+  #     - claude-opus-4.5
+  #     - claude-sonnet-4.5
+  #     - claude-haiku-4.5
+  #   timeout: 120
+  #   stream_timeout: 600
+  #   max_retries: 2
+  # ==========================================================================
+
+  # AnyRouter 后端 - 公益站多模型路由
+  # 优先级在 Ruoli 之后（公益站顺序）
+  anyrouter:
+    enabled: ${ANYROUTER_ENABLED:true}
+    priority: 4
+    base_url: ${ANYROUTER_ENDPOINT:https://api.anyrouter.cc/v1}
+    api_key: ${ANYROUTER_API_KEY:}  # 需要配置 API Key
+    models:
+      - claude-sonnet-4.5
+      - claude-opus-4.5
+      - claude-haiku-4.5
+      - claude-sonnet-4
+      - gpt-4
+      - gpt-4o
+    timeout: 120
+    stream_timeout: 600
+    max_retries: 2
+
+# ==================== 模型特定路由规则 ====================
+#
+# 配置说明：
+# - 为特定模型配置优先级后端链
+# - backends: 按优先级排序的后端列表（第一个优先）
+#   - 格式可以是:
+#     - 字符串: "backend_name" (使用请求中的原始模型)
+#     - 对象: {backend: "backend_name", model: "target_model"} (指定目标模型)
+# - fallback_on: 触发降级到下一个后端的条件
+#   - HTTP 状态码（如 429, 503）
+#   - 特殊条件：timeout, connection_error, unavailable
+# - enabled: 是否启用此路由规则（默认 true）
+#
+# 完整降级链示例 (claude-sonnet-4.5):
+# ⚠️ 注意：Sonnet 4.5 有硬编码优先级规则，第一优先级是 kiro-gateway！
+# kiro(4.5) -> gcli2api-antigravity(4.5) -> ruoli(4.5) -> anyrouter(4.5) -> copilot(4.5) -> copilot(4) -> gcli2api-antigravity(gemini-3-flash)
+# 硬编码规则（不受 YAML 影响）→ kiro 优先 → gcli2api-antigravity → 公益站链路（ruoli → anyrouter）→ copilot 兜底
+#
+model_routing:
+  # Claude Sonnet 4.5 完整降级链
+  # ✅ [FIX 2026-02-06] Antigravity → Antigravity Tools → Ruoli → AnyRouter → Kiro → Copilot → Gemini
+  # 当自研后端凭证不可用时，完整降级条件触发 fallback 到 antigravity-tools
+  claude-sonnet-4.5:
+    enabled: ${SONNET45_KIRO_FIRST:true}
+    backends:
+      # 1. Antigravity - Claude Sonnet 4.5（首选自研后端）
+      - backend: gcli2api-antigravity
+        model: claude-sonnet-4.5
+      # 2. 🆕 Antigravity Tools - Claude Sonnet 4.5（自研后端凭证不可用时 fallback）
+      - backend: antigravity-tools
+        model: claude-sonnet-4-5-20250514
+      # 3. Ruoli API - Claude Sonnet 4.5（公益站第一选择）
+      - backend: ruoli
+        model: claude-sonnet-4.5
+      # [DISABLED 2026-02-15] DKAPI/Cifang API Keys 已失效
+      # - backend: dkapi
+      #   model: claude-sonnet-4.5
+      # - backend: cifang
+      #   model: claude-sonnet-4.5
+      # 4. AnyRouter - Claude Sonnet 4.5（公益站第二选择）
+      - backend: anyrouter
+        model: claude-sonnet-4.5
+      # 5. Kiro Gateway - Claude Sonnet 4.5
+      - backend: kiro-gateway
+        model: claude-sonnet-4.5
+      # 6. Copilot - Claude Sonnet 4.5
+      - backend: copilot
+        model: claude-sonnet-4.5
+      # 7. Copilot - Claude Sonnet 4 (降级到 4.0)
+      - backend: copilot
+        model: claude-sonnet-4
+      # 8. Antigravity - Gemini 3 Pro High (跨池降级)
+      - backend: gcli2api-antigravity
+        model: gemini-3-pro-high
+    fallback_on:
+      - 403             # 权限错误 / 人机验证
+      - 429             # 配额耗尽 / 速率限制
+      - 500             # 服务器内部错误
+      - 502             # 网关错误
+      - 503             # 服务不可用
+      - 504             # 网关超时
+      - timeout         # 请求超时
+      - connection_error # 连接失败
+      - unavailable     # 后端不可用
+
+  # Claude Opus 4.5 完整降级链
+  # ✅ [FIX 2026-01-25] Antigravity (硬编码首选) → Ruoli → AnyRouter → Kiro → Copilot → Gemini Pro High
+  # ✅ [FIX 2026-02-02] 跨池降级目标改为 gemini-3-pro-high，与 fallback_manager 一致
+  # ⚠️ 硬编码规则：Opus 4.5 优先使用 Antigravity（见 src/gateway/routing.py Line 244-249）
+  # ✅ [FIX 2026-02-02] Kiro Gateway 移到 Copilot 前面，优先尝试免费后端
+  claude-opus-4.5:
+    enabled: ${OPUS45_ANTIGRAVITY_FIRST:true}
+    backends:
+      # [REMOVED 2026-02-20] ZeroGravity 上游 v1.2.0 已 sunset opus-4.5
+      # 1. Antigravity - Claude Opus 4.5（硬编码首选，成本最低）
+      - backend: gcli2api-antigravity
+        model: claude-opus-4.5
+      # 2. 🆕 Antigravity Tools - Claude Opus 4.5（自研后端 429/403 时 fallback）
+      - backend: antigravity-tools
+        model: claude-opus-4.5
+      # 3. Ruoli API - Claude Opus 4.5（公益站第一选择）
+      - backend: ruoli
+        model: claude-opus-4.5
+      # [DISABLED 2026-02-15] DKAPI/Cifang API Keys 已失效
+      # - backend: dkapi
+      #   model: claude-opus-4.5
+      # - backend: cifang
+      #   model: claude-opus-4.5
+      # 4. AnyRouter - Claude Opus 4.5（公益站第二选择）
+      - backend: anyrouter
+        model: claude-opus-4.5
+      # [REMOVED 2026-02-26] Kiro Gateway 不支持 Opus 模型，已从降级链移除
+      # 6. Copilot - Claude Opus 4.5（首选付费后端）
+      - backend: copilot
+        model: claude-opus-4.5
+      # 7. Copilot - Claude Sonnet 4.5 (降级到 Sonnet)
+      - backend: copilot
+        model: claude-sonnet-4.5
+      # 8. Copilot - Claude Sonnet 4
+      - backend: copilot
+        model: claude-sonnet-4
+      # 9. Antigravity - Gemini 3 Flash (跨池最终降级)
+      - backend: gcli2api-antigravity
+        model: gemini-3-flash
+    fallback_on:
+      - 403  # ✅ [FIX 2026-02-03] 添加 403 权限错误（触发凭证切换）
+      - 429
+      - 500
+      - 502
+      - 503
+      - 504  # ✅ [FIX 2026-02-03] 添加 504 网关超时
+      - timeout
+      - connection_error
+      - unavailable
+
+  # ✅ [FIX 2026-01-25] Claude Opus 4-5 (映射后的格式，支持 Cursor 客户端)
+  # Cursor 发送的模型名：claude-4.5-opus-high-thinking
+  # 映射后的模型名：claude-opus-4-5-thinking
+  # 此配置确保映射后的模型名称也能正确路由
+  # ✅ [FIX 2026-02-02] Kiro Gateway 移到 Copilot 前面，优先尝试免费后端
+  claude-opus-4-5:
+    enabled: ${OPUS45_ANTIGRAVITY_FIRST:true}
+    backends:
+      # [REMOVED 2026-02-20] ZeroGravity 上游 v1.2.0 已 sunset opus-4.5
+      # 1. Antigravity - Claude Opus 4-5（硬编码首选，成本最低）
+      - backend: gcli2api-antigravity
+        model: claude-opus-4-5-thinking
+      # 2. 🆕 Antigravity Tools - Claude Opus 4-5（自研后端 429/403 时 fallback）
+      - backend: antigravity-tools
+        model: claude-opus-4-5-20251101
+      # 3. Ruoli API - Claude Opus 4-5（公益站第一选择）
+      - backend: ruoli
+        model: claude-opus-4-5
+      # [DISABLED 2026-02-15] DKAPI/Cifang API Keys 已失效
+      # - backend: dkapi
+      #   model: claude-opus-4-5
+      # - backend: cifang
+      #   model: claude-opus-4-5
+      # 4. AnyRouter - Claude Opus 4-5（公益站第二选择）
+      - backend: anyrouter
+        model: claude-opus-4-5
+      # [REMOVED 2026-02-26] Kiro Gateway 不支持 Opus 模型，已从降级链移除
+      # 5. Kiro Gateway - Claude Opus 4-5（在 Copilot 前尝试）
+      # - backend: kiro-gateway
+      #   model: claude-opus-4-5-20250514
+      # 6. Copilot - Claude Opus 4-5（首选付费后端）
+      - backend: copilot
+        model: claude-opus-4-5
+      # 7. Copilot - Claude Sonnet 4-5 (降级到 Sonnet)
+      - backend: copilot
+        model: claude-sonnet-4-5
+      # 7. Copilot - Claude Sonnet 4
+      - backend: copilot
+        model: claude-sonnet-4
+      # 8. Antigravity - Gemini 3 Pro High (跨池降级，与 fallback_manager 一致)
+      # ✅ [FIX 2026-02-02] 改为 gemini-3-pro-high，与 CLAUDE_TO_GEMINI_FALLBACK 对齐
+      - backend: gcli2api-antigravity
+        model: gemini-3-pro-high
+    fallback_on:
+      - 403  # ✅ [FIX 2026-02-03] 添加 403 权限错误（触发凭证切换）
+      - 429
+      - 500
+      - 502
+      - 503
+      - 504  # ✅ [FIX 2026-02-03] 添加 504 网关超时
+      - timeout
+      - connection_error
+      - unavailable
+
+  # ==================== [NEW 2026-02-06] Claude Opus 4.6 降级链 ====================
+  # Claude Code 更新到 Opus 4.6 模型
+  # 策略：先尝试 4.6（快速失败），再 fallback 到 4.5 完整链
+  # ✅ [FIX 2026-02-08] Antigravity 和 Antigravity Tools 已支持 Opus 4.6，使用 claude-opus-4-6-thinking
+  claude-opus-4.6:
+    enabled: true
+    # 快速尝试超时（用于 4.6 探测，有就是有没有就是没有）
+    fast_fail_timeout: 10
+    backends:
+      # ========== Phase 0: ZeroGravity MITM Proxy（最高优先级）==========
+      # 🆕 [2026-02-20] 流量指纹不可区分，直接通过官方 LS Binary
+      - backend: zerogravity
+        model: claude-opus-4.6
+      # ========== Phase 1: 尝试 Opus 4.6（快速探测）==========
+      # 1. Antigravity - Opus 4.6 thinking（已支持）
+      - backend: gcli2api-antigravity
+        model: claude-opus-4-6-thinking
+      # 2. Antigravity Tools - Opus 4.6 thinking（已支持）
+      - backend: antigravity-tools
+        model: claude-opus-4-6-thinking
+      # 3. Ruoli API - Opus 4.6（已支持）
+      - backend: ruoli
+        model: claude-opus-4.6
+      # [DISABLED 2026-02-15] DKAPI/Cifang API Keys 已失效
+      # - backend: dkapi
+      #   model: claude-opus-4.6
+      # - backend: cifang
+      #   model: claude-opus-4.6
+      # 4. AnyRouter - Opus 4.6（已支持）
+      - backend: anyrouter
+        model: claude-opus-4.6
+      # ========== Phase 2: 降级到 Opus 4.5 完整链 ==========
+      # 5. Antigravity - Claude Opus 4.5（稳定版本）
+      - backend: gcli2api-antigravity
+        model: claude-opus-4.5
+      # 6. Antigravity Tools - Claude Opus 4.5
+      - backend: antigravity-tools
+        model: claude-opus-4.5
+      # 7. Ruoli API - Claude Opus 4.5
+      - backend: ruoli
+        model: claude-opus-4.5
+      # [DISABLED 2026-02-15] DKAPI/Cifang API Keys 已失效
+      # - backend: dkapi
+      #   model: claude-opus-4.5
+      # - backend: cifang
+      #   model: claude-opus-4.5
+      # 8. AnyRouter - Claude Opus 4.5
+      - backend: anyrouter
+        model: claude-opus-4.5
+      # [REMOVED 2026-02-26] Kiro Gateway 不支持 Opus，已从降级链移除
+      # 10. Copilot - 先尝试 Opus 4.6（已支持）
+      - backend: copilot
+        model: claude-opus-4.6
+      # 11. Copilot - Claude Opus 4.5（降级）
+      - backend: copilot
+        model: claude-opus-4.5
+      # ========== Phase 3: 跨模型降级 ==========
+      # 12. Copilot - Claude Sonnet 4.5
+      - backend: copilot
+        model: claude-sonnet-4.5
+      # 13. Kiro Gateway - Claude Sonnet 4（比 Copilot 便宜）
+      - backend: kiro-gateway
+        model: claude-sonnet-4
+      # 14. Kiro Gateway - Claude Haiku 4.5（轻量快速）
+      - backend: kiro-gateway
+        model: claude-haiku-4.5
+      # 15. Copilot - Claude Haiku 4.5
+      - backend: copilot
+        model: claude-haiku-4.5
+      # 16. Antigravity - Gemini 3 Flash (跨池最终降级)
+      - backend: gcli2api-antigravity
+        model: gemini-3-flash
+    fallback_on:
+      - 400  # 模型不存在时返回 400
+      - 403
+      - 404  # 模型未找到
+      - 429
+      - 500
+      - 502
+      - 503
+      - 504
+      - timeout
+      - connection_error
+      - unavailable
+
+  # Claude Opus 4-6 (带连字符格式，支持不同客户端)
+  # ✅ [FIX 2026-02-08] Antigravity 和 Antigravity Tools 已支持 Opus 4.6
+  claude-opus-4-6:
+    enabled: true
+    fast_fail_timeout: 10
+    backends:
+      # ========== Phase 0: ZeroGravity MITM Proxy（最高优先级）==========
+      # 🆕 [2026-02-20] 流量指纹不可区分，直接通过官方 LS Binary
+      - backend: zerogravity
+        model: claude-opus-4-6
+      # ========== Phase 1: 尝试 Opus 4.6（已支持）==========
+      - backend: gcli2api-antigravity
+        model: claude-opus-4-6-thinking
+      - backend: antigravity-tools
+        model: claude-opus-4-6-thinking
+      - backend: ruoli
+        model: claude-opus-4-6
+      # [DISABLED 2026-02-15] DKAPI/Cifang API Keys 已失效
+      # - backend: dkapi
+      #   model: claude-opus-4-6
+      # - backend: cifang
+      #   model: claude-opus-4-6
+      - backend: anyrouter
+        model: claude-opus-4-6
+      # ========== Phase 2: 降级到 Opus 4.5 完整链 ==========
+      - backend: gcli2api-antigravity
+        model: claude-opus-4-5-thinking
+      - backend: antigravity-tools
+        model: claude-opus-4-5-20251101
+      - backend: ruoli
+        model: claude-opus-4-5
+      # [DISABLED 2026-02-15] DKAPI/Cifang API Keys 已失效
+      # - backend: dkapi
+      #   model: claude-opus-4-5
+      # - backend: cifang
+      #   model: claude-opus-4-5
+      - backend: anyrouter
+        model: claude-opus-4-5
+      # [REMOVED 2026-02-26] Kiro Gateway 不支持 Opus，已从降级链移除
+      # - backend: kiro-gateway
+      #   model: claude-opus-4-5-20250514
+      # Copilot - 先尝试 Opus 4.6（已支持）
+      - backend: copilot
+        model: claude-opus-4-6
+      # Copilot - 降级到 Opus 4.5
+      - backend: copilot
+        model: claude-opus-4-5
+      # ========== Phase 3: 跨模型降级 ==========
+      - backend: copilot
+        model: claude-sonnet-4-5
+      # Kiro Gateway - Claude Sonnet 4（比 Copilot 便宜）
+      - backend: kiro-gateway
+        model: claude-sonnet-4
+      # Kiro Gateway - Claude Haiku 4.5（轻量快速）
+      - backend: kiro-gateway
+        model: claude-haiku-4-5
+      # Copilot - Claude Haiku 4.5
+      - backend: copilot
+        model: claude-haiku-4-5
+      - backend: gcli2api-antigravity
+        model: gemini-3-pro-high
+    fallback_on:
+      - 400
+      - 403
+      - 404
+      - 429
+      - 500
+      - 502
+      - 503
+      - 504
+      - timeout
+      - connection_error
+      - unavailable
+  # ======================================================================================
+
+  # ==================== [NEW 2026-02-21] ZeroGravity 模型路由规则 ====================
+  # 以下模型由 ZeroGravity MITM Proxy 提供最高优先级支持
+  # ZG 使用官方 LS Binary，流量指纹不可区分
+
+  # Claude Sonnet 4.6 完整降级链
+  claude-sonnet-4.6:
+    enabled: true
+    backends:
+      # Phase 0: ZeroGravity MITM Proxy（最高优先级）
+      - backend: zerogravity
+        model: claude-sonnet-4.6
+      # Phase 1: Antigravity 自研后端
+      - backend: gcli2api-antigravity
+        model: claude-sonnet-4.6
+      # Phase 2: Antigravity Tools
+      - backend: antigravity-tools
+        model: claude-sonnet-4-6
+      # Phase 3: 公益站
+      - backend: ruoli
+        model: claude-sonnet-4.6
+      - backend: anyrouter
+        model: claude-sonnet-4.6
+      # Phase 4: 降级到 Sonnet 4.5
+      - backend: gcli2api-antigravity
+        model: claude-sonnet-4.5
+      - backend: kiro-gateway
+        model: claude-sonnet-4.5
+      - backend: copilot
+        model: claude-sonnet-4.5
+    fallback_on:
+      - 403
+      - 429
+      - 500
+      - 502
+      - 503
+      - 504
+      - timeout
+      - connection_error
+      - unavailable
+
+  # Claude Sonnet 4-6 (带连字符格式)
+  claude-sonnet-4-6:
+    enabled: true
+    backends:
+      - backend: zerogravity
+        model: claude-sonnet-4-6
+      - backend: gcli2api-antigravity
+        model: claude-sonnet-4-6
+      - backend: antigravity-tools
+        model: claude-sonnet-4-6
+      - backend: ruoli
+        model: claude-sonnet-4-6
+      - backend: anyrouter
+        model: claude-sonnet-4-6
+      - backend: gcli2api-antigravity
+        model: claude-sonnet-4-5
+      - backend: kiro-gateway
+        model: claude-sonnet-4-5
+      - backend: copilot
+        model: claude-sonnet-4-5
+    fallback_on:
+      - 403
+      - 429
+      - 500
+      - 502
+      - 503
+      - 504
+      - timeout
+      - connection_error
+      - unavailable
+
+  # Gemini 3 Flash 降级链
+  gemini-3-flash:
+    enabled: true
+    backends:
+      # Phase 0: ZeroGravity MITM Proxy（最高优先级）
+      - backend: zerogravity
+        model: gemini-3-flash
+      # Phase 1: Antigravity 自研后端
+      - backend: gcli2api-antigravity
+        model: gemini-3-flash
+      # Phase 2: Antigravity Tools
+      - backend: antigravity-tools
+        model: gemini-3-flash
+    fallback_on:
+      - 403
+      - 429
+      - 500
+      - 502
+      - 503
+      - 504
+      - timeout
+      - connection_error
+      - unavailable
+
+  # Gemini 3.1 Pro 降级链
+  gemini-3.1-pro:
+    enabled: true
+    backends:
+      - backend: zerogravity
+        model: gemini-3.1-pro
+      - backend: gcli2api-antigravity
+        model: gemini-3.1-pro
+    fallback_on:
+      - 403
+      - 429
+      - 500
+      - 502
+      - 503
+      - timeout
+      - connection_error
+      - unavailable
+
+  # Gemini 3.1 Pro High 降级链
+  gemini-3.1-pro-high:
+    enabled: true
+    backends:
+      - backend: zerogravity
+        model: gemini-3.1-pro-high
+      - backend: gcli2api-antigravity
+        model: gemini-3.1-pro-high
+    fallback_on:
+      - 403
+      - 429
+      - 500
+      - 502
+      - 503
+      - timeout
+      - connection_error
+      - unavailable
+
+  # Gemini 3.1 Pro Low 降级链
+  gemini-3.1-pro-low:
+    enabled: true
+    backends:
+      - backend: zerogravity
+        model: gemini-3.1-pro-low
+      - backend: gcli2api-antigravity
+        model: gemini-3.1-pro-low
+    fallback_on:
+      - 403
+      - 429
+      - 500
+      - 502
+      - 503
+      - timeout
+      - connection_error
+      - unavailable
+  # ==================== End of ZeroGravity 模型路由规则 ====================
+
+  # Claude Haiku 4.5 降级链 (轻量模型)
+  # ✅ [FIX 2026-01-24] Haiku 排除 Antigravity（与旧网关一致）
+  # ✅ [FIX 2026-02-02] 默认启用，优先 Kiro，避免 Copilot 被随意启用
+  # ⚠️ Antigravity 不支持 Haiku 模型，直接走 Kiro → AnyRouter → Copilot 链路
+  claude-haiku-4.5:
+    enabled: ${HAIKU45_KIRO_FIRST:true}
+    backends:
+      # 1. Kiro Gateway - Claude Haiku 4.5（首选）
+      - backend: kiro-gateway
+        model: claude-haiku-4.5
+      # ❌ 移除 Antigravity（不支持 Haiku）
+      # [DISABLED 2026-02-15] DKAPI/Cifang API Keys 已失效
+      # - backend: dkapi
+      #   model: claude-haiku-4.5
+      # - backend: cifang
+      #   model: claude-haiku-4.5
+      # 4. AnyRouter - Claude Haiku 4.5（公益站）
+      - backend: anyrouter
+        model: claude-haiku-4.5
+      # 5. Copilot - Claude Haiku 4.5
+      - backend: copilot
+        model: claude-haiku-4.5
+      # 4. Antigravity - Gemini 3 Flash（跨池最终降级）
+      - backend: gcli2api-antigravity
+        model: gemini-3-flash
+    fallback_on:
+      - 429
+      - 500  # ✅ [FIX 2026-02-03] 添加 500 内部服务器错误
+      - 502
+      - 503
+      - 504  # ✅ [FIX 2026-02-03] 添加 504 网关超时
+      - timeout
+      - connection_error
+      - unavailable
+
+
+# ==================== Phase B: Data-Driven Routing Configuration ====================
+# [REFACTOR 2026-02-21] 将所有硬编码路由规则迁移至 YAML 配置
+# 使路由系统完全数据驱动：新增/调整模型只需改 YAML
+# 优先级解析顺序：
+#   1. model_routing (显式模型规则) — 不变
+#   2. default_routing.rules (模式匹配规则) — 替代 routing.py Steps 1-5
+#   3. default_routing.catch_all — 替代 Step 5 else 分支
+#   4. cross_model_fallback (跨模型降级) — 替代 proxy.py 末尾逻辑
+#   5. final_fallback (绝对最终兜底) — 替代 proxy.py Copilot 兜底
+# ===================================================================================
+
+
+# ==================== 1. Backend Capabilities (后端能力声明) ====================
+# 替代 is_antigravity_supported()、is_kiro_gateway_supported()、ANTIGRAVITY_SUPPORTED_PATTERNS
+# 使用 fnmatch 模式匹配（支持 * 和 ? 通配符）
+# 4.5/4-5 和 4.6/4-6 归一化由模式匹配引擎自动处理
+
+backend_capabilities:
+  zerogravity:
+    include_patterns:
+      - "claude-opus-4.6*"
+      - "claude-opus-4-6*"
+      - "claude-sonnet-4.6*"
+      - "claude-sonnet-4-6*"
+      - "gemini-3.1-*"
+      - "gemini-3-flash*"
+
+  gcli2api-antigravity:
+    include_patterns:
+      # Gemini 2.5 系列
+      - "gemini-2.5-*"
+      - "gemini-2-5-*"
+      # Gemini 3 系列
+      - "gemini-3-*"
+      # Claude 4.5 Sonnet/Opus（排除 Haiku — Haiku 不走 AG）
+      - "claude-sonnet-4.5*"
+      - "claude-sonnet-4-5*"
+      - "claude-opus-4.5*"
+      - "claude-opus-4-5*"
+      # Claude 4.6 Opus
+      - "claude-opus-4.6*"
+      - "claude-opus-4-6*"
+      # [FIX 2026-03-10] Claude 4.6 Sonnet（冷启动窗口内 YAML 兜底）
+      - "claude-sonnet-4.6*"
+      - "claude-sonnet-4-6*"
+      # GPT 4/5 系列
+      - "gpt-4*"
+      - "gpt-5*"
+      # GPT OOS
+      - "gpt-oos*"
+    exclude_patterns:
+      - "*haiku*"      # Haiku 不走 Antigravity
+      - "gpt-3.5*"     # GPT 3.5 不支持
+      - "gpt-3*"       # GPT 3 不支持
+
+  antigravity-tools:
+    include_patterns:
+      # Claude 4.6 系列
+      - "claude-opus-4.6*"
+      - "claude-opus-4-6*"
+      # [FIX 2026-03-10] Claude 4.6 Sonnet（冷启动窗口内 YAML 兜底）
+      - "claude-sonnet-4.6*"
+      - "claude-sonnet-4-6*"
+      # Claude 4.5 系列（主要目标）
+      - "claude-opus-4.5*"
+      - "claude-opus-4-5*"
+      - "claude-sonnet-4.5*"
+      - "claude-sonnet-4-5*"
+      # Gemini 2.5 系列
+      - "gemini-2.5-*"
+      - "gemini-2-5-*"
+      # Gemini 3 系列
+      - "gemini-3-*"
+      # GPT 系列
+      - "gpt-4*"
+      - "gpt-5*"
+    exclude_patterns:
+      - "*haiku*"
+      - "gpt-3.5*"
+
+  # [FIX 2026-02-26] 更新 kiro-gateway 能力声明，移除不支持的 Opus 系列
+  # 实际支持: claude-sonnet-4.5, claude-sonnet-4, claude-haiku-4.5, deepseek-3.2, minimax-m2.1, qwen3-coder-next
+  kiro-gateway:
+    include_patterns:
+      # Claude Sonnet 4.5
+      - "claude-sonnet-4.5*"
+      - "claude-sonnet-4-5*"
+      # Claude Haiku 4.5
+      - "claude-haiku-4.5*"
+      - "claude-haiku-4-5*"
+      # Claude Sonnet 4（非 4.5）
+      - "claude-sonnet-4"
+      # DeepSeek / MiniMax / Qwen 系列
+      - "deepseek-3.2*"
+      - "minimax-m2.1*"
+      - "qwen3-coder*"
+    exclude_patterns:
+      - "*opus*"     # Kiro 不支持任何 Opus 模型
+
+  copilot:
+    include_patterns:
+      - "*"    # 兜底，接受所有模型
+
+
+# ==================== 2. Default Routing (默认路由链) ====================
+# 替代 routing.py get_backend_and_model_for_routing() Steps 1-5
+# 规则按顺序匹配，第一个匹配的规则生效
+# chain 中的后端按顺序尝试，第一个可用且支持该模型的后端被选中
+# fallback_on 定义触发降级到下一个后端的条件
+# 注意：model_routing 显式规则优先级高于 default_routing
+
+default_routing:
+  rules:
+    # ---- Haiku 系列 → Kiro 优先（Antigravity 不支持 Haiku） ----
+    - pattern: "claude-*haiku*"
+      chain:
+        - backend: kiro-gateway
+        - backend: anyrouter
+        - backend: copilot
+      fallback_on: [429, 500, 502, 503, 504, timeout, connection_error]
+
+    # ---- Opus 4.6 → ZeroGravity 优先（最高优先级 MITM） ----
+    # [FIX 2026-02-26] 移除 kiro-gateway（不支持 Opus）
+    - pattern: "claude-*opus*4.6*"
+      chain:
+        - backend: zerogravity
+        - backend: gcli2api-antigravity
+        - backend: antigravity-tools
+        - backend: copilot
+      fallback_on: [400, 403, 404, 429, 500, 502, 503, 504, timeout, connection_error]
+
+    # ---- Sonnet 4.6 → ZeroGravity 优先 ----
+    # [FIX 2026-02-26] 移除 kiro-gateway（不支持 Sonnet 4.6）
+    - pattern: "claude-*sonnet*4.6*"
+      chain:
+        - backend: zerogravity
+        - backend: gcli2api-antigravity
+        - backend: antigravity-tools
+        - backend: copilot
+      fallback_on: [400, 403, 404, 429, 500, 502, 503, 504, timeout, connection_error]
+
+    # ---- Opus 4.5 → Antigravity 优先 ----
+    # [FIX 2026-02-26] 移除 kiro-gateway（不支持 Opus）
+    - pattern: "claude-*opus*4.5*"
+      chain:
+        - backend: gcli2api-antigravity
+        - backend: antigravity-tools
+        - backend: copilot
+      fallback_on: [403, 429, 500, 502, 503, 504, timeout, connection_error]
+
+    # ---- Sonnet 4.5 → Kiro 优先（与现有 Step 1 一致） ----
+    - pattern: "claude-*sonnet*4.5*"
+      chain:
+        - backend: kiro-gateway
+        - backend: gcli2api-antigravity
+        - backend: antigravity-tools
+        - backend: copilot
+      fallback_on: [403, 429, 500, 502, 503, 504, timeout, connection_error]
+
+    # ---- 其他 Claude Sonnet（如 sonnet-4）→ Antigravity 优先 ----
+    - pattern: "claude-*sonnet*"
+      chain:
+        - backend: gcli2api-antigravity
+        - backend: antigravity-tools
+        - backend: kiro-gateway
+        - backend: copilot
+      fallback_on: [403, 429, 500, 502, 503, 504, timeout, connection_error]
+
+    # ---- Gemini 系列 → ZeroGravity 优先 ----
+    - pattern: "gemini-*"
+      chain:
+        - backend: zerogravity
+        - backend: gcli2api-antigravity
+        - backend: antigravity-tools
+      fallback_on: [403, 429, 500, 502, 503, timeout, connection_error]
+
+    # ---- GPT 系列 → Antigravity 优先 ----
+    - pattern: "gpt-*"
+      chain:
+        - backend: gcli2api-antigravity
+        - backend: antigravity-tools
+        - backend: copilot
+      fallback_on: [429, 500, 502, 503, timeout, connection_error]
+
+    # ---- O1/O3/O4 系列 → Copilot 直通 ----
+    - pattern: "o1*"
+      chain:
+        - backend: copilot
+      fallback_on: [429, 500, 502, 503]
+
+    - pattern: "o3*"
+      chain:
+        - backend: copilot
+      fallback_on: [429, 500, 502, 503]
+
+    - pattern: "o4*"
+      chain:
+        - backend: copilot
+      fallback_on: [429, 500, 502, 503]
+
+    # ---- 中国国产模型 → kiro-gateway 优先 ----
+    # [FIX 2026-03-10] DeepSeek/MiniMax/Qwen 等非 Claude 模型路由到 kiro-gateway
+    - pattern: "deepseek*"
+      chain:
+        - backend: kiro-gateway
+      fallback_on: [429, 500, 502, 503, 504, timeout, connection_error]
+
+    - pattern: "minimax*"
+      chain:
+        - backend: kiro-gateway
+      fallback_on: [429, 500, 502, 503, 504, timeout, connection_error]
+
+    - pattern: "qwen*"
+      chain:
+        - backend: kiro-gateway
+      fallback_on: [429, 500, 502, 503, 504, timeout, connection_error]
+
+  # 兜底规则：未匹配任何 pattern 时使用
+  # [FIX 2026-03-10] 加入 kiro-gateway 作为防御性兜底
+  catch_all:
+    chain:
+      - backend: gcli2api-antigravity
+      - backend: antigravity-tools
+      - backend: kiro-gateway
+      - backend: copilot
+    fallback_on: [429, 500, 502, 503, 504, timeout, connection_error]
+
+
+# ==================== 3. Cross-Model Fallback (跨模型降级) ====================
+# 替代 proxy.py 跨模型降级逻辑 + fallback_manager.py CLAUDE_TO_GEMINI_FALLBACK
+# 当某模型在所有后端都失败后，尝试切换到不同模型
+# 注意：触发条件由 proxy.py 的 enable_cross_pool_fallback 控制
+
+cross_model_fallback:
+  enabled: true
+  rules:
+    - pattern: "claude-*opus*"
+      fallback_model: gemini-3-pro-high
+      backend: gcli2api-antigravity
+    - pattern: "claude-*sonnet*"
+      fallback_model: gemini-3-pro-high
+      backend: gcli2api-antigravity
+    - pattern: "claude-*haiku*"
+      fallback_model: gemini-3-flash
+      backend: gcli2api-antigravity
+    - pattern: "gpt-oos*"
+      fallback_model: gemini-3-pro-high
+      backend: gcli2api-antigravity
+    # 默认降级目标
+    - pattern: "*"
+      fallback_model: gemini-3-pro-high
+      backend: gcli2api-antigravity
+
+
+# ==================== 4. Copilot Model Mapping (Copilot 模型名映射) ====================
+# 替代 config.py COPILOT_MODEL_MAPPING 中的显式映射条目
+# 模糊匹配逻辑（Claude/GPT/Gemini 家族推断）保留在 Python 的 map_model_for_copilot() 中
+
+copilot_model_mapping:
+  # Claude Haiku 系列 → claude-haiku-4.5
+  claude-3-haiku: claude-haiku-4.5
+  claude-3.5-haiku: claude-haiku-4.5
+  claude-haiku-3: claude-haiku-4.5
+  claude-haiku-3.5: claude-haiku-4.5
+  claude-haiku: claude-haiku-4.5
+
+  # Claude Sonnet 系列
+  claude-3-sonnet: claude-sonnet-4
+  claude-3.5-sonnet: claude-sonnet-4
+  claude-sonnet-3: claude-sonnet-4
+  claude-sonnet-3.5: claude-sonnet-4
+  claude-sonnet: claude-sonnet-4
+
+  # Claude 4 系列
+  claude-4-sonnet: claude-sonnet-4
+  claude-sonnet-4: claude-sonnet-4
+  claude-4.5-sonnet: claude-sonnet-4.5
+  claude-sonnet-4.5: claude-sonnet-4.5
+
+  claude-4-opus: claude-opus-4.5
+  claude-opus-4: claude-opus-4.5
+  claude-4.5-opus: claude-opus-4.5
+  claude-opus-4.5: claude-opus-4.5
+
+  claude-4-haiku: claude-haiku-4.5
+  claude-haiku-4: claude-haiku-4.5
+  claude-4.5-haiku: claude-haiku-4.5
+  claude-haiku-4.5: claude-haiku-4.5
+
+  # Claude Opus 4.6 系列
+  claude-4.6-opus: claude-opus-4.6
+  claude-4-6-opus: claude-opus-4.6
+  claude-opus-4.6: claude-opus-4.6
+  claude-opus-4-6: claude-opus-4.6
+
+  # GPT 系列
+  gpt-4-turbo: gpt-4-0125-preview
+  gpt-4-turbo-preview: gpt-4-0125-preview
+  gpt-4o-latest: gpt-4o
+  gpt-4o-mini-latest: gpt-4o-mini
+
+  # Gemini 系列
+  gemini-2.5-pro-latest: gemini-2.5-pro
+  gemini-2.5-pro-preview: gemini-2.5-pro
+  gemini-3-pro: gemini-3-pro-high
+  gemini-3-pro-preview: gemini-3-pro-high
+  gemini-3-flash: gemini-3-flash
+  gemini-3-flash-preview: gemini-3-flash
+
+
+# ==================== 5. Final Fallback (最终兜底) ====================
+# 替代 proxy.py 硬编码 Copilot 兜底逻辑
+# 当所有路由链和跨模型降级都失败时，最终尝试 Copilot
+
+final_fallback:
+  enabled: true
+  backend: copilot
+  respect_circuit_breaker: true

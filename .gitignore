@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Data files
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+log.txt
+log.jsonl
+
+# Test cache
+.pytest_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+nul
+
+# Machine ID
+.gcli2api/
+
+# Credentials (never commit)
+creds/
+*.pem
+*.key
+
+# Backup files
+*.bak
+*.backup.*
+*.bak.*
+.ace-tool/
+
+# Oh My ClaudeCode sessions
+.omc/
+
+# Claude Code project config
+.claude/
+
+# Spec Workflow
+.spec-workflow/
