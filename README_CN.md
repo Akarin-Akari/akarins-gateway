@@ -91,6 +91,311 @@
 - **仅签名恢复**：Claude Code 需要 thinking 签名恢复但不需要完整 SCID 状态管理——一种轻量级混合模式
 - **跨池降级**：无状态 CLI 工具允许跨池降级；有状态 IDE 客户端禁止，以防止会话损坏
 
+### Cursor 抓包重放拦截与权威历史（自研）
+
+Cursor（及类似 IDE 客户端）每次发送新请求时都会携带**完整的对话历史** —— 本质上就是"抓包重放"。然而在重放过程中，Cursor 会以多种方式**破坏**消息，导致不符合 Anthropic 的 API 要求：
+
+| 破坏类型 | 具体表现 | 后果 |
+|---------|---------|------|
+| **Thinking 块变形** | `\r\n`→`\n`、尾部空格裁剪、内容截断 | `400 Invalid signature in thinking block` — 签名与精确字节序列绑定 |
+| **签名丢失** | `thoughtSignature` 字段被静默剥离 | 无法验证 thinking 块，Extended Thinking 被禁用 |
+| **工具链断裂** | 发送 `tool_use` 但丢失对应的 `tool_result` | `400 tool_use_result_mismatch` — 对话中断 |
+| **无会话标识** | Cursor 从不发送 `conversation_id` | 无法将请求关联到同一会话 |
+
+网关通过成为**权威状态机**来解决以上所有问题 —— 永远不信任 IDE 回放的历史，维护自己的干净副本。
+
+**核心设计原则**：*"网关是唯一的真相来源。客户端回放的历史被视为不可信输入。"*
+
+#### 数据流
+
+```
+Cursor 请求（携带被破坏的重放历史）
+    │
+    ├──► IDE 兼容中间件 ──► 检测客户端类型（Cursor）
+    │
+    ├──► SCID 生成器 ──► 生成稳定的会话 ID
+    │    (7 级瀑布)        基于第一条有效业务用户消息
+    │
+    ├──► Anthropic 净化器 ──► 6 层签名恢复
+    │    (sanitizer.py)        ├─ 客户端提供的签名
+    │                          ├─ 上下文中的签名
+    │                          ├─ 编码 tool_id 解码
+    │                          ├─ Session 缓存 (sig, text) 配对
+    │                          ├─ Tool 缓存: tool_id → sig
+    │                          └─ 最后已知签名（兜底）
+    │                          全部失败 → thinking 降级为 text
+    │
+    ├──► 状态管理器.merge ──► 用权威版本替换被破坏的历史
+    │    (state_manager.py)    ├─ 位置+角色匹配: 使用权威版本
+    │                          ├─ 新消息: 追加客户端消息
+    │                          ├─ 孤儿 tool_use: 从缓存或权威
+    │                          │   历史中恢复 tool_result
+    │                          └─ 工具链分裂: 保留双方消息
+    │
+    ├──► 历史缓存 ──► 智能消息选择
+    │    (history_cache.py)  (LRU + 固定锚点工具定义)
+    │
+    ▼
+转发干净的请求到上游 LLM
+    │
+    ▼
+流式回传响应
+    ├─ 提取并缓存 thinking 签名（动态检查点: 2→5→10 chunks）
+    ├─ 用干净的响应更新权威历史
+    └─ 缓存 tool_use_id → tool_result 映射
+```
+
+#### 五大核心机制
+
+**1. 权威历史存储**（`state_manager.py`）
+
+每次 LLM 成功响应后，网关将干净的原始消息作为该会话的"权威历史"存储。当 Cursor 下次重放其被破坏的版本时，网关会**替换**它：
+
+```python
+# 对于权威历史覆盖范围内的位置 → 使用干净版本
+if auth_msg.get("role") == client_msg.get("role"):
+    merged.append(authoritative[i])  # 使用网关的干净副本
+# 对于超出权威历史的新消息 → 接受客户端消息
+for i in range(auth_len, len(client_messages)):
+    merged.append(client_messages[i])
+```
+
+关键特性：
+- **双层持久化**：内存缓存（快速）+ SQLite（跨重启持久化）
+- **自动压缩已禁用**：保护工具链完整性 —— 仅在上游返回请求体过大错误时才触发紧急压缩
+- **陈旧 SCID 碰撞检测**：当短消息新会话意外命中携带重工具链历史的旧 SCID 时，自动重置状态
+
+**2. 6 层签名恢复**（`sanitizer.py`）
+
+当 Cursor 剥离 thinking 签名时，网关在放弃前会尝试 6 种恢复策略：
+
+```
+第 1 层: 客户端提供的签名（极少可用）
+第 2 层: 请求上下文中的签名
+第 3 层: 从编码的 tool_id 解码
+第 4 层: Session 缓存 — (signature, thinking_text) 配对查找
+第 5 层: Tool 缓存 — tool_use_id → signature 映射
+第 6 层: 最后已知签名（兜底）
+
+全部失败 → 优雅降级: thinking 块 → text 块
+            + 同步 thinkingConfig 与内容一致
+```
+
+最后 2 条 assistant 消息会获得更积极的恢复尝试，因为它们最可能在工具调用回合中被引用。
+
+**3. 工具链完整性保护**（`state_manager.py`）
+
+Cursor 在重放时经常破坏 `tool_use`/`tool_result` 配对。网关会检测并修复：
+
+```
+检测孤儿 tool_use（有 tool_call_id 但无匹配的 tool_result）
+    │
+    ├─ 第 1 步: 检查 tool_results_cache（按会话缓存，以 tool_use_id 为键）
+    │   └─ 找到 → 在 tool_use 后注入缓存的 tool_result
+    │
+    └─ 第 2 步: 回退到权威历史
+        └─ 在存储的历史中搜索匹配的 tool_result
+            └─ 找到 → 合并到消息列表
+```
+
+网关还会在响应处理期间缓存每个 `tool_use_id → tool_result` 映射，为未来的重放破坏构建安全网。
+
+**4. 增量流检查点**（`scid.py`）
+
+流式传输期间，如果流被中断（网络问题、客户端断开），签名可能丢失。网关以动态间隔保存状态：
+
+| 流阶段 | Chunk 范围 | 保存间隔 | 原因 |
+|--------|-----------|---------|------|
+| 初始阶段 | 0–50 | 每 2 个 chunk | 签名通常早期出现 |
+| 正常阶段 | 50–200 | 每 5 个 chunk | 平衡性能 |
+| 后期阶段 | 200+ | 每 10 个 chunk | 减少 I/O 开销 |
+
+在下一次请求时，如果网关检测到未完成的会话，会从最后一个检查点恢复签名 —— 防止 thinking 被永久禁用。
+
+**5. Thinking 块优雅降级**（`sanitizer.py`）
+
+当所有恢复尝试都失败时，网关执行优雅降级而非让请求失败：
+
+```
+thinking 块（签名无效/缺失）
+    → 转换为 text 块（保留内容，移除签名要求）
+    → 同步 thinkingConfig（如无有效 thinking 块则禁用）
+    → 请求继续处理，不会产生 400 错误
+```
+
+这确保了即使 Cursor 严重破坏了重放历史，对话也能继续进行。
+
+### 上下文管理与压缩策略（自研）
+
+IDE 客户端（尤其是 Cursor）每次请求都会重放**完整的对话历史**，历史会无限增长。网关必须在上游 token/body 限制内控制请求大小，同时**绝不破坏工具链或丢失推理上下文**。这通过一套保守的多层压缩架构来解决。
+
+**核心设计原则**：*"永不删除消息。只压缩内容。工具链完整性是最高优先级。"*
+
+#### 为什么禁用自动压缩
+
+```python
+AUTO_COMPRESS_ENABLED = False      # 已禁用 — 保护工具链
+MAX_HISTORY_MESSAGES = 200         # 软限制，不是硬上限
+COMPRESSED_KEEP_MESSAGES = 150     # 仅在紧急路径中使用
+TOOL_RESULT_COMPRESSION_ENABLED = False  # 常规截断默认关闭
+```
+
+删除**任何**消息都可能破坏 `tool_use`/`tool_result` 配对，导致 `400 tool_use_result_mismatch` 错误。网关采用**仅内容压缩**策略 —— 缩减消息内部内容，但不移除消息本身。
+
+#### 三层压缩架构
+
+```
+请求到达（可能携带 200+ 条消息）
+    │
+    ├──► 第 1 层：常规工具结果压缩（默认关闭）
+    │   (_compress_tool_result)
+    │   ├─ 规范化格式（Gemini → Anthropic）
+    │   ├─ 启用时：截断工具结果到 5000 字符
+    │   ├─ 添加 "[SCID compressed N chars]" 标记
+    │   └─ 在合并和历史更新时应用
+    │
+    ├──► 第 2 层：权威历史压缩
+    │   (_compress_authoritative_history)
+    │   ├─ 当历史超过 200 条消息时触发
+    │   ├─ ⚠️ 永不删除消息 — 只压缩内容
+    │   ├─ 对所有消息迭代执行 _compress_tool_result
+    │   └─ 所有消息保留，仅内容被截断
+    │
+    └──► 第 3 层：紧急压缩（最后手段）
+        (trigger_emergency_compress)
+        ├─ 仅在上游返回错误时触发：
+        │   ├─ 413 Request Entity Too Large
+        │   └─ 400 且错误信息包含 "too large" / "token limit" / "context length"
+        ├─ 激进截断工具结果到 1000 字符
+        ├─ 标记内容：{ _emergency_truncated: true }
+        └─ 仍然保留所有消息 — 永不破坏工具链
+```
+
+**关键设计决策**：网关宁可让上游拒绝过大的请求然后应用紧急压缩，也不会主动删除消息冒工具链损坏的风险。
+
+#### 带固定锚点的历史缓存
+
+对于长对话，网关维护一个独立于权威状态的**完整历史缓存**，通过智能消息选择将请求控制在约 200KB 的 body 限制内。
+
+```
+完整对话历史（已缓存，不会被主动逐出）
+    │
+    ├──► 固定锚点（工具定义）
+    │   ├─ 与普通消息分开存储
+    │   ├─ 永不从 LRU 缓存中逐出
+    │   ├─ 始终包含在每个后端请求中
+    │   └─ 24 小时 TTL 清理过期锚点
+    │
+    └──► 智能消息选择（用于后端请求）
+        ├─ 步骤 1：所有 system 消息（始终包含）
+        ├─ 步骤 2：最近 N 条消息（默认 10）
+        ├─ 步骤 3：重要的中间消息
+        │   ├─ 用户消息优先（承载意图）
+        │   ├─ 按内容长度评分（越长越重要）
+        │   └─ 排序选择以填充剩余预算
+        └─ 步骤 4：工具链完整性检查
+            ├─ 每个 tool_use 必须有匹配的 tool_result
+            ├─ 孤儿 tool_use/tool_result 被移除
+            └─ 支持 OpenAI 和 Anthropic 两种格式
+```
+
+**请求体预算**：`≤ 200KB` — 通过 `HISTORY_CACHE_MAX_MESSAGES_DEFAULT=20`（普通）和 `HISTORY_CACHE_MAX_MESSAGES_TOOL=40`（工具密集型对话）控制。
+
+### 多层缓存架构（自研）
+
+网关使用三层缓存架构存储 thinking 签名、会话状态和流检查点 —— 为高并发读取和最终一致性写入而设计。
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     缓存读取路径（热路径）                         │
+│                                                                 │
+│  请求 ──► L1 内存缓存 ──命中──► 立即返回                          │
+│                │                                                │
+│              未命中                                              │
+│                │                                                │
+│          L2 SQLite DB ──命中──► 提升到 L1，返回                   │
+│                │                                                │
+│              未命中                                              │
+│                │                                                │
+│          内容哈希缓存 ──► 前缀/规范化匹配                         │
+│                │                                                │
+│              未命中 ──► 缓存未命中，无可用签名                     │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    缓存写入路径（异步）                           │
+│                                                                 │
+│  新签名 ──► L1 内存缓存（同步，立即写入）                         │
+│              │                                                  │
+│              └──► 异步写入队列 ──► L2 SQLite DB                  │
+│                   ├─ 批量提交（100 条/1000ms）                    │
+│                   ├─ 指数退避重试                                 │
+│                   ├─ 队列溢出保护（最大 10K）                     │
+│                   └─ 优雅关机时排空队列                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### L1：内存缓存
+
+| 特性 | 详情 |
+|------|------|
+| 数据结构 | `OrderedDict` — O(1) 存取，LRU 排序 |
+| 并发控制 | 自研 `RWLock` — 多读单写 |
+| 淘汰策略 | LRU（默认），也支持 FIFO 和 LFU |
+| TTL | 按条目过期，惰性清理 |
+| 隔离 | 命名空间 + 会话 ID 双重隔离 |
+| 跨命名空间兜底 | `get_by_thinking_hash_any_namespace()` — 命名空间变更时仍能找到签名 |
+| 预热 | 启动时从 L2 预加载 |
+
+#### L2：SQLite 数据库（WAL 模式）
+
+五张表提供跨网关重启的持久化存储：
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `signature_cache` | thinking_hash → 签名映射 | `thinking_hash`, `signature`, `namespace`, `conversation_id` |
+| `tool_signature_cache` | tool_use_id → 签名 | `tool_id`, `signature` |
+| `session_signature_cache` | session_id → (签名, thinking_text) | `session_id`, `signature`, `thinking_text` |
+| `conversation_state` | SCID → 权威历史 + 最后签名 | `scid`, `authoritative_history`, `last_signature` |
+| `session_checkpoints` | 流中断恢复 | `scid`, `thinking_content`, `partial_response`, `signature` |
+
+#### 内容哈希缓存（签名恢复加速器）
+
+当 Cursor 破坏 thinking 文本（空白变更、尾部空格、内容截断）时，精确哈希查找会失败。内容哈希缓存提供**模糊匹配**以恢复签名：
+
+```
+来自 Cursor 的 thinking 文本（已被破坏）
+    │
+    ├──► 精确 SHA256 哈希查找 ──命中──► 返回签名
+    │
+    ├──► 规范化哈希查找 ──命中──► 返回签名
+    │   （去除空白，规范化 \r\n → \n）
+    │
+    └──► 前缀匹配 ──命中──► 返回签名
+        （前 100+ 字符匹配，处理截断场景）
+```
+
+| 特性 | 详情 |
+|------|------|
+| 双哈希策略 | 精确 SHA256 + 规范化 SHA256（空白不敏感） |
+| 前缀匹配 | 最少 100 字符，处理 IDE 截断 thinking 内容的场景 |
+| 容量 | LRU 淘汰，10,000 条目，1 小时 TTL |
+| 命中追踪 | 三类计数器：`exact_hits`、`normalized_hits`、`prefix_hits` |
+
+#### 缓存门面（统一接口）
+
+`CacheFacade` 单例为所有缓存层提供统一 API，内置滚动升级迁移支持：
+
+```
+迁移阶段：
+  LEGACY_ONLY → DUAL_WRITE → NEW_PREFERRED → NEW_ONLY
+
+  - LEGACY_ONLY：仅读写旧缓存
+  - DUAL_WRITE：同时写入新旧缓存，从旧缓存读取（安全过渡）
+  - NEW_PREFERRED：同时写入，优先从新缓存读取
+  - NEW_ONLY：旧缓存完全退役
+```
+
 ### Augment Code 协议桥接
 
 一个完整的协议翻译层，使网关能同时兼容 [Augment Code](https://www.augmentcode.com/)（内部代号 "Bugment"）和标准 OpenAI 接口。
