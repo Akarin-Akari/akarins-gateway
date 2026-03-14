@@ -87,8 +87,15 @@ class BackendHealthManager:
             self._freeze_count.pop(oldest_key, None)
         return actual_duration, count
 
-    async def record_success(self, backend_key: str) -> None:
+    async def record_success(self, backend_key: str, response_time_ms: float = 0.0) -> None:
         """记录后端请求成功"""
+        # [NEW 2026-03-14] Stats collector hook for panel dashboard
+        try:
+            from akarins_gateway.gateway.stats_collector import get_stats_collector
+            get_stats_collector().record(backend_key, True, response_time_ms, 200)
+        except Exception:
+            pass  # stats collection is non-critical
+
         async with self._lock:
             data = self._get_or_create(backend_key)
             data["success"] += 1
@@ -105,8 +112,15 @@ class BackendHealthManager:
             else:
                 log.info(f"[BACKEND HEALTH] {backend_key} 成功 (total={data['success']})", tag="GATEWAY")
 
-    async def record_failure(self, backend_key: str, error_code: int = 0) -> None:
+    async def record_failure(self, backend_key: str, error_code: int = 0, response_time_ms: float = 0.0) -> None:
         """记录后端请求失败"""
+        # [NEW 2026-03-14] Stats collector hook for panel dashboard
+        try:
+            from akarins_gateway.gateway.stats_collector import get_stats_collector
+            get_stats_collector().record(backend_key, False, response_time_ms, error_code)
+        except Exception:
+            pass  # stats collection is non-critical
+
         async with self._lock:
             data = self._get_or_create(backend_key)
             data["failure"] += 1

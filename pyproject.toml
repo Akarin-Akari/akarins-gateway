@@ -19,6 +19,7 @@ dependencies = [
     "aiosqlite>=0.20.0",
     "curl_cffi>=0.7.0",
     "aiofiles>=24.0.0",
+    "ruamel.yaml>=0.18.0",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,8 @@ tls = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
+    "pytest-playwright>=0.6.0",
+    "playwright>=1.49.0",
     "ruff>=0.8.0",
 ]
 
@@ -51,3 +54,10 @@ select = ["E", "F", "W", "I"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "e2e: End-to-end browser tests (require running gateway)",
+]
+
+[tool.playwright]
+browser = "chromium"
+headed = false

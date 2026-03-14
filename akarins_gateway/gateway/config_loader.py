@@ -39,6 +39,11 @@ __all__ = [
     "get_copilot_model_mapping_yaml",
     "get_final_fallback",
     "reload_model_routing_config",
+    # [REFACTOR 2026-03-14] Runtime flags (YAML + env-var fallback)
+    "RUNTIME_FLAG_DEFAULTS",
+    "load_runtime_flags",
+    "get_runtime_flag",
+    "reload_runtime_flags",
 ]
 
 
@@ -851,6 +856,80 @@ def _get_raw_yaml_config(config_path: str = None) -> dict:
 
     _raw_yaml_cache = raw
     return raw
+
+
+# ==================== Runtime Flags (YAML + env-var fallback) ====================
+# [REFACTOR 2026-03-14] Migrate AnyRouter env flags to gateway.yaml runtime_flags
+#   Precedence: gateway.yaml runtime_flags > env var > default
+
+# Known flags with defaults (used for Panel UI labels)
+RUNTIME_FLAG_DEFAULTS: Dict[str, bool] = {
+    "ANYROUTER_CURSOR_PROFILE_FALLBACK": True,
+    "ANYROUTER_CURSOR_PROFILE_FORCE_ADVANCE": True,
+    "ANYROUTER_CURSOR_FILTER_PLUGIN_TOOLS": True,
+    "ANYROUTER_CAPTURE_ENABLED": False,
+    "ANYROUTER_CURSOR_NO_ROTATE_ON_INVALID": False,
+    "ANYROUTER_CURSOR_FORWARD_X_APP": True,
+}
+
+_runtime_flags_cache: Optional[Dict[str, bool]] = None
+
+
+def load_runtime_flags(config_path: str = None) -> Dict[str, bool]:
+    """
+    从 gateway.yaml 的 runtime_flags 节加载运行时开关
+
+    Returns:
+        {flag_name: bool_value}
+    """
+    raw = _get_raw_yaml_config(config_path)
+    section = raw.get("runtime_flags", {})
+    if not isinstance(section, dict):
+        return {}
+    result = {}
+    for key, val in section.items():
+        if isinstance(val, bool):
+            result[str(key)] = val
+        elif isinstance(val, str):
+            result[str(key)] = val.strip().lower() in ("1", "true", "yes", "on")
+    return result
+
+
+def get_runtime_flag(name: str, default: bool = False) -> bool:
+    """
+    获取运行时开关值
+
+    优先级: gateway.yaml runtime_flags > 环境变量 > default 参数
+
+    Args:
+        name: 开关名称 (如 "ANYROUTER_CURSOR_PROFILE_FALLBACK")
+        default: 默认值
+
+    Returns:
+        bool
+    """
+    global _runtime_flags_cache
+
+    if _runtime_flags_cache is None:
+        _runtime_flags_cache = load_runtime_flags()
+
+    # Priority 1: YAML runtime_flags
+    if name in _runtime_flags_cache:
+        return _runtime_flags_cache[name]
+
+    # Priority 2: environment variable
+    env_val = os.getenv(name)
+    if env_val is not None:
+        return str(env_val).strip().lower() in ("1", "true", "yes", "on")
+
+    # Priority 3: default
+    return default
+
+
+def reload_runtime_flags():
+    """清空 runtime_flags 缓存，下次调用 get_runtime_flag 时重新加载"""
+    global _runtime_flags_cache
+    _runtime_flags_cache = None
 
 
 # ==================== Phase B: Section Loaders ====================

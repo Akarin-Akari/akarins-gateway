@@ -27,6 +27,7 @@ from .config_loader import (
     BackendEntry,
     get_default_routing_rule,
     get_catch_all_routing,
+    get_final_fallback,
     is_backend_capable,
 )
 
@@ -40,10 +41,6 @@ except ImportError:
     import logging
     log = logging.getLogger(__name__)
 
-# ==================== [REFACTOR 2026-02-21] Phase B-2: Feature Toggle ====================
-# 设置 ROUTING_USE_YAML=false 可回退到旧 Steps 1-5 硬编码路由
-ROUTING_USE_YAML = os.environ.get("ROUTING_USE_YAML", "true").lower() == "true"
-log.info(f"[GATEWAY] ROUTING_USE_YAML={ROUTING_USE_YAML}", tag="GATEWAY") if hasattr(log, 'info') else None
 
 
 def _is_model_supported_by_backend(backend: str, model: str) -> bool:
@@ -110,7 +107,6 @@ __all__ = [
     "sanitize_model_params",  # 新增：清理模型参数
     # [FIX 2026-03-10] Export for proxy.py capability filtering
     "_is_model_supported_by_backend",
-    "should_fallback_to_next",
     # [P1 迁移 2026-01-24] 从提示词提取模型
     "extract_model_from_prompt",
 ]
@@ -238,106 +234,54 @@ def get_backend_and_model_for_routing(model: str) -> Tuple[Optional[str], str]:
                             )
                         return entry.backend, entry.model
 
-    # ==================== [REFACTOR 2026-02-21] Phase B-2: YAML-driven routing ====================
-    if ROUTING_USE_YAML:
-        # Step 1 (NEW): default_routing pattern matching rules from gateway.yaml
-        default_rule = get_default_routing_rule(model)
-        if default_rule:
-            for entry in default_rule.chain:
-                backend_config = BACKENDS.get(entry.backend, {})
-                if backend_config.get("enabled", True) and _is_model_supported_by_backend(entry.backend, model):
-                    if hasattr(log, 'route'):
-                        log.route(
-                            f"Model {model} -> {entry.backend} "
-                            f"(default_routing pattern: {default_rule.pattern})",
-                            tag="GATEWAY"
-                        )
-                    return entry.backend, model
+    # ==================== YAML-driven routing ====================
+    # [REFACTOR 2026-03-14] Legacy Steps 1-5 deleted — YAML-only routing now
 
-        # Step 2 (NEW): catch_all fallback
-        # [FIX 2026-03-10] Two-pass: prefer backends that support this model
-        catch_all = get_catch_all_routing()
-        if catch_all:
-            # Pass 1: prefer backends that claim support for this model
-            for entry in catch_all.chain:
-                backend_config = BACKENDS.get(entry.backend, {})
-                if backend_config.get("enabled", True) and _is_model_supported_by_backend(entry.backend, model):
-                    if hasattr(log, 'route'):
-                        log.route(
-                            f"Model {model} -> {entry.backend} (catch_all, capability match)",
-                            tag="GATEWAY"
-                        )
-                    return entry.backend, model
-            # Pass 2: no backend claims support — fall back to first enabled (legacy behavior)
-            for entry in catch_all.chain:
-                backend_config = BACKENDS.get(entry.backend, {})
-                if backend_config.get("enabled", True):
-                    if hasattr(log, 'route'):
-                        log.route(
-                            f"Model {model} -> {entry.backend} (catch_all, no capability match)",
-                            tag="GATEWAY"
-                        )
-                    return entry.backend, model
-
-        # Absolute fallback
-        if hasattr(log, 'route'):
-            log.route(f"Model {model} -> Copilot (absolute fallback)", tag="GATEWAY")
-        return "copilot", model
-
-    else:
-        # ==================== Legacy Steps 1-5 (ROUTING_USE_YAML=false) ====================
-        # 1. Sonnet 4.5 优先使用 Kiro Gateway
-        if "sonnet" in model_lower and ("4.5" in model_lower or "4-5" in model_lower):
-            if is_kiro_gateway_supported(model):
+    # Step 1: default_routing pattern matching rules from gateway.yaml
+    default_rule = get_default_routing_rule(model)
+    if default_rule:
+        for entry in default_rule.chain:
+            backend_config = BACKENDS.get(entry.backend, {})
+            if backend_config.get("enabled", True) and _is_model_supported_by_backend(entry.backend, model):
                 if hasattr(log, 'route'):
-                    log.route(f"Model {model} -> Kiro Gateway (sonnet 4.5 priority)", tag="GATEWAY")
-                return "kiro-gateway", model
+                    log.route(
+                        f"Model {model} -> {entry.backend} "
+                        f"(default_routing pattern: {default_rule.pattern})",
+                        tag="GATEWAY"
+                    )
+                return entry.backend, model
 
-        # 2. Opus 优先使用 Antigravity（4.6 和 4.5 均支持）
-        if "opus" in model_lower and ("4.6" in model_lower or "4-6" in model_lower):
-            if is_antigravity_supported(model):
+    # Step 2: catch_all fallback
+    # [FIX 2026-03-10] Two-pass: prefer backends that support this model
+    catch_all = get_catch_all_routing()
+    if catch_all:
+        # Pass 1: prefer backends that claim support for this model
+        for entry in catch_all.chain:
+            backend_config = BACKENDS.get(entry.backend, {})
+            if backend_config.get("enabled", True) and _is_model_supported_by_backend(entry.backend, model):
                 if hasattr(log, 'route'):
-                    log.route(f"Model {model} -> Antigravity (opus 4.6 priority)", tag="GATEWAY")
-                return "gcli2api-antigravity", model
-        if "opus" in model_lower and ("4.5" in model_lower or "4-5" in model_lower):
-            if is_antigravity_supported(model):
+                    log.route(
+                        f"Model {model} -> {entry.backend} (catch_all, capability match)",
+                        tag="GATEWAY"
+                    )
+                return entry.backend, model
+        # Pass 2: no backend claims support — fall back to first enabled
+        for entry in catch_all.chain:
+            backend_config = BACKENDS.get(entry.backend, {})
+            if backend_config.get("enabled", True):
                 if hasattr(log, 'route'):
-                    log.route(f"Model {model} -> Antigravity (opus 4.5 priority)", tag="GATEWAY")
-                return "gcli2api-antigravity", model
+                    log.route(
+                        f"Model {model} -> {entry.backend} (catch_all, no capability match)",
+                        tag="GATEWAY"
+                    )
+                return entry.backend, model
 
-        # 3. 检查 Kiro Gateway 路由配置
-        if KIRO_GATEWAY_MODELS:
-            if model_lower in KIRO_GATEWAY_MODELS:
-                if hasattr(log, 'route'):
-                    log.route(f"Model {model} -> Kiro Gateway (configured)", tag="GATEWAY")
-                return "kiro-gateway", model
-            normalized_model = normalize_model_name(model)
-            for kiro_model in KIRO_GATEWAY_MODELS:
-                if normalized_model == kiro_model.lower() or normalized_model.startswith(kiro_model.lower()):
-                    if hasattr(log, 'route'):
-                        log.route(f"Model {model} -> Kiro Gateway (pattern match: {kiro_model})", tag="GATEWAY")
-                    return "kiro-gateway", model
-        else:
-            if is_kiro_gateway_supported(model):
-                if hasattr(log, 'route'):
-                    log.route(f"Model {model} -> Kiro Gateway (fallback, supported)", tag="GATEWAY")
-                return "kiro-gateway", model
-
-        # 4. 检查 Ruoli API 支持
-        if is_ruoli_supported(model):
-            if hasattr(log, 'route'):
-                log.route(f"Model {model} -> Ruoli API (public)", tag="GATEWAY")
-            return "ruoli", model
-
-        # 5. 检查 Antigravity 支持
-        if is_antigravity_supported(model):
-            if hasattr(log, 'route'):
-                log.route(f"Model {model} -> Antigravity", tag="GATEWAY")
-            return "gcli2api-antigravity", model
-        else:
-            if hasattr(log, 'route'):
-                log.route(f"Model {model} -> Copilot (not in AG list)", tag="GATEWAY")
-            return "copilot", model
+    # [FIX 2026-03-14] Absolute fallback — respect final_fallback config instead of hardcoding "copilot"
+    final_fb = get_final_fallback()
+    fb_backend = final_fb.backend if (final_fb and final_fb.enabled) else "copilot"
+    if hasattr(log, 'route'):
+        log.route(f"Model {model} -> {fb_backend} (absolute fallback via final_fallback config)", tag="GATEWAY")
+    return fb_backend, model
 
 
 def sanitize_model_params(body: Dict[str, Any], target_model: str) -> Dict[str, Any]:
@@ -363,12 +307,12 @@ def sanitize_model_params(body: Dict[str, Any], target_model: str) -> Dict[str, 
             log.debug(f"[FALLBACK] 移除 thinking 参数（Gemini 不支持）", tag="GATEWAY")
             del sanitized["thinking"]
         
-        # 调整 max_tokens 范围（Gemini 的限制通常是 8192）
+        # 调整 max_tokens 范围（Gemini 3 Pro 支持 65536，2.5 系列支持 32768）
         if "max_tokens" in sanitized:
             max_tokens = sanitized["max_tokens"]
-            if isinstance(max_tokens, int) and max_tokens > 8192:
-                log.debug(f"[FALLBACK] 调整 max_tokens: {max_tokens} -> 8192 (Gemini 限制)", tag="GATEWAY")
-                sanitized["max_tokens"] = 8192
+            if isinstance(max_tokens, int) and max_tokens > 65536:
+                log.debug(f"[FALLBACK] 调整 max_tokens: {max_tokens} -> 65536 (Gemini 限制)", tag="GATEWAY")
+                sanitized["max_tokens"] = 65536
         
         # 清理 messages 中的 thinking 块（如果存在）
         if "messages" in sanitized and isinstance(sanitized["messages"], list):
@@ -959,39 +903,6 @@ def get_fallback_backend_and_model(
     return None
 
 
-def should_fallback_to_next(
-    model: str,
-    current_backend: str,
-    status_code: int = None,
-    error_type: str = None
-) -> bool:
-    """
-    判断是否应该降级到下一个后端
-
-    Args:
-        model: 模型名称
-        current_backend: 当前后端
-        status_code: HTTP 状态码
-        error_type: 错误类型
-
-    Returns:
-        是否应该降级
-    """
-    routing_rule = get_model_routing_rule(model)
-    if not routing_rule or not routing_rule.enabled:
-        return False
-
-    # 检查当前后端是否在路由链中
-    if current_backend not in routing_rule.backends:
-        return False
-
-    # 检查是否有下一个后端
-    idx = routing_rule.backends.index(current_backend)
-    if idx + 1 >= len(routing_rule.backends):
-        return False
-
-    # 检查降级条件
-    return routing_rule.should_fallback(status_code, error_type)
 
 
 # ==================== 从提示词提取模型 ====================

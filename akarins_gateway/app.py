@@ -22,8 +22,11 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from akarins_gateway.core.log import log
 
@@ -172,6 +175,25 @@ def create_app() -> FastAPI:
     from akarins_gateway.gateway.augment import create_augment_router
     augment_router = create_augment_router()
     app.include_router(augment_router, prefix="/gateway", tags=["Augment Code"])
+
+    # ---- Management Panel Router ----
+    from akarins_gateway.gateway.endpoints.panel import router as panel_router
+    app.include_router(panel_router, tags=["Panel"])
+
+    # ---- Panel Static Files (frontend/) ----
+    frontend_dir = Path(__file__).parent.parent / "frontend"
+    if frontend_dir.is_dir():
+        app.mount("/panel/static", StaticFiles(directory=str(frontend_dir)), name="panel-static")
+        log.info(f"[STARTUP] Panel static files mounted from {frontend_dir}")
+
+        # Serve index.html at /panel
+        from fastapi.responses import FileResponse
+
+        @app.get("/panel", include_in_schema=False)
+        async def panel_index():
+            return FileResponse(str(frontend_dir / "index.html"))
+    else:
+        log.warning(f"[STARTUP] Panel frontend dir not found: {frontend_dir}")
 
     # ---- Keepalive endpoint ----
     @app.head("/keepalive")

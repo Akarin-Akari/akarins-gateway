@@ -78,7 +78,7 @@ if not _ANYROUTER_BASE_URLS_SOURCE:
     _ANYROUTER_BASE_URLS_SOURCE = os.getenv("ANYROUTER_ENDPOINT", "").strip()
 if not _ANYROUTER_BASE_URLS_SOURCE:
     _ANYROUTER_BASE_URLS_SOURCE = (
-        "https://api.anyrouter.cc/v1,https://anyrouter.top"
+        "https://a-ocnfniawgw.cn-shanghai.fcapp.run,https://anyrouter.top"
     )
 
 _ANYROUTER_API_KEYS_SOURCE = os.getenv("ANYROUTER_API_KEYS", "").strip()
@@ -86,7 +86,7 @@ if not _ANYROUTER_API_KEYS_SOURCE:
     _ANYROUTER_API_KEYS_SOURCE = os.getenv("ANYROUTER_API_KEY", "").strip()
 if not _ANYROUTER_API_KEYS_SOURCE:
     _ANYROUTER_API_KEYS_SOURCE = (
-        "sk-E4L18390pp12BacrKa7IJV8hgztEo8SsPKFdtSYGx6vLEbDK,sk-be7LKJwag3qXSRL77tVbxUsIHEi71UfAVOvqjGI13BJiXGD5"
+        "sk-be7LKJwag3qXSRL77tVbxUsIHEi71UfAVOvqjGI13BJiXGD5"
     )
 
 BACKENDS: Dict[str, Dict[str, Any]] = {
@@ -207,6 +207,84 @@ BACKENDS: Dict[str, Dict[str, Any]] = {
 # This replaces ~90 lines of hand-written public station BACKENDS entries.
 # To add a new public station, edit src/gateway/backends/public_station/stations.py instead.
 _get_psm().inject_into_backends(BACKENDS)
+
+
+# [FIX 2026-03-14] Apply gateway.yaml overrides to BACKENDS at startup
+# Without this, panel changes (priority, enabled, etc.) are lost on restart
+# because config.py re-creates BACKENDS from hardcoded values each time.
+def _apply_yaml_overrides() -> None:
+    """
+    Read gateway.yaml and merge backend settings into the runtime BACKENDS dict.
+
+    Merge strategy:
+    - For each backend in YAML:
+      - If already in BACKENDS: override enabled, priority, timeout, stream_timeout, max_retries
+      - If not in BACKENDS: create a new entry (supports panel-added backends)
+    - Backends in BACKENDS but not in YAML: keep as-is (backward compat)
+    - base_url: only override if the YAML value is NOT an env-var reference (${...})
+    """
+    from pathlib import Path
+    try:
+        import yaml as _yaml
+    except ImportError:
+        return  # No YAML library available, skip
+
+    config_path = Path(__file__).parent.parent.parent / "config" / "gateway.yaml"
+    if not config_path.exists():
+        return
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            raw = _yaml.safe_load(f)
+    except Exception:
+        return  # Silently skip on parse error
+
+    if not isinstance(raw, dict):
+        return
+
+    yaml_backends = raw.get("backends")
+    if not isinstance(yaml_backends, dict):
+        return
+
+    # Fields to merge from YAML into BACKENDS
+    _MERGE_FIELDS = ("enabled", "priority", "timeout", "stream_timeout", "max_retries")
+
+    for key, yaml_cfg in yaml_backends.items():
+        if not isinstance(yaml_cfg, dict):
+            continue
+
+        if key in BACKENDS:
+            # Existing backend — merge overridable fields
+            target = BACKENDS[key]
+            for field in _MERGE_FIELDS:
+                if field in yaml_cfg:
+                    target[field] = yaml_cfg[field]
+
+            # base_url: only override if YAML value is a concrete URL (not ${...})
+            yaml_url = yaml_cfg.get("base_url", "")
+            if yaml_url and isinstance(yaml_url, str) and not yaml_url.startswith("${"):
+                target["base_url"] = yaml_url
+        else:
+            # New backend from YAML (panel-added) — create entry
+            from akarins_gateway.gateway.config_loader import expand_env_vars
+            expanded = expand_env_vars(yaml_cfg)
+            BACKENDS[key] = {
+                "name": expanded.get("name", key),
+                "base_url": expanded.get("base_url", ""),
+                "priority": expanded.get("priority", 99),
+                "timeout": expanded.get("timeout", 60.0),
+                "stream_timeout": expanded.get("stream_timeout", 300.0),
+                "max_retries": expanded.get("max_retries", 2),
+                "enabled": expanded.get("enabled", True),
+                "api_format": expanded.get("api_format", "openai"),
+                "api_keys": expanded.get("api_keys", []),
+                "supported_models": expanded.get("models", []),
+                "scid_enabled": False,
+            }
+
+
+# Execute at import time — after hardcoded BACKENDS + PSM injection
+_apply_yaml_overrides()
 
 
 # ==================== Kiro Gateway 路由配置 ====================

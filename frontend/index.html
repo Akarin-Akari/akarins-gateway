@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Akarin's Gateway — Panel</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Alpine.js CDN -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- SortableJS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="/panel/static/css/panel.css">
+
+    <!-- Custom JS -->
+    <script src="/panel/static/js/sortable-helpers.js"></script>
+    <script src="/panel/static/js/i18n.js"></script>
+    <script src="/panel/static/js/panel.js"></script>
+</head>
+
+<body x-data x-init="$store.panel.tryRestoreSession()">
+
+<!-- ==================== LOGIN PAGE ==================== -->
+<template x-if="!$store.panel.authenticated">
+<div class="login-container">
+    <div class="login-box glass-card">
+        <h1 x-text="$store.i18n.t('login.title')"></h1>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;" x-text="$store.i18n.t('login.subtitle')"></p>
+
+        <div x-data="{ password: '' }">
+            <input
+                type="password"
+                class="input-field"
+                :placeholder="$store.i18n.t('login.placeholder')"
+                x-model="password"
+                @keydown.enter="$store.panel.login(password)"
+                autofocus
+            >
+            <template x-if="$store.panel.loginError">
+                <p style="color: var(--accent-red); font-size: 0.8rem; margin-top: 0.5rem;"
+                   x-text="$store.panel.loginError"></p>
+            </template>
+            <button
+                class="btn-primary"
+                style="width: 100%; margin-top: 1rem;"
+                @click="$store.panel.login(password)"
+                :disabled="$store.panel.loginLoading"
+            >
+                <span x-show="!$store.panel.loginLoading" x-text="$store.i18n.t('login.signin')"></span>
+                <span x-show="$store.panel.loginLoading" x-text="$store.i18n.t('login.authenticating')"></span>
+            </button>
+        </div>
+    </div>
+</div>
+</template>
+
+<!-- ==================== MAIN DASHBOARD ==================== -->
+<template x-if="$store.panel.authenticated">
+<div style="position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 1.5rem;">
+
+    <!-- Header -->
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
+        <div>
+            <h1 style="font-size: 1.25rem; font-weight: 600; margin: 0;" x-text="$store.i18n.t('header.title')"></h1>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;" x-text="$store.i18n.t('header.subtitle')"></p>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <!-- Language Switcher -->
+            <div style="display: flex; gap: 2px; background: var(--bg-input); border-radius: 6px; padding: 2px; border: 1px solid var(--border-subtle);">
+                <button style="padding: 2px 8px; font-size: 0.7rem; border: none; border-radius: 4px; cursor: pointer; transition: all 0.2s;"
+                        :style="$store.i18n.isEn ? 'background: var(--accent-blue); color: white;' : 'background: transparent; color: var(--text-muted);'"
+                        @click="$store.i18n.setLocale('en')">EN</button>
+                <button style="padding: 2px 8px; font-size: 0.7rem; border: none; border-radius: 4px; cursor: pointer; transition: all 0.2s;"
+                        :style="$store.i18n.isZh ? 'background: var(--accent-blue); color: white;' : 'background: transparent; color: var(--text-muted);'"
+                        @click="$store.i18n.setLocale('zh')">中文</button>
+            </div>
+            <button class="btn-ghost" @click="$store.panel.saveConfig()" :disabled="$store.panel.loading">
+                <span x-show="!$store.panel.loading" x-text="$store.i18n.t('header.save')"></span>
+                <span x-show="$store.panel.loading" x-text="$store.i18n.t('header.saving')"></span>
+            </button>
+            <button class="btn-ghost" @click="$store.panel.logout()" x-text="$store.i18n.t('header.logout')"></button>
+        </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+        <button class="tab-btn" :class="{ active: $store.panel.activeTab === 'backends' }"
+                @click="$store.panel.activeTab = 'backends'" x-text="$store.i18n.t('tab.backends')">
+        </button>
+        <button class="tab-btn" :class="{ active: $store.panel.activeTab === 'routing' }"
+                @click="$store.panel.activeTab = 'routing'" x-text="$store.i18n.t('tab.routing')">
+        </button>
+        <button class="tab-btn" :class="{ active: $store.panel.activeTab === 'health' }"
+                @click="$store.panel.activeTab = 'health'" x-text="$store.i18n.t('tab.health')">
+        </button>
+        <button class="tab-btn" :class="{ active: $store.panel.activeTab === 'clients' }"
+                @click="$store.panel.activeTab = 'clients'" x-text="$store.i18n.t('tab.clients')">
+        </button>
+    </div>
+
+    <!-- ==================== TAB 1: BACKENDS ==================== -->
+    <div x-show="$store.panel.activeTab === 'backends'" x-cloak>
+        <div id="backend-list"
+             x-init="$nextTick(() => initBackendSortable('backend-list', (order) => $store.panel.reorderBackends(order)))">
+
+            <template x-for="b in $store.panel.backends" :key="b.key">
+                <div class="glass-card backend-card" :data-key="b.key">
+                    <!-- Card Header -->
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <!-- Drag Handle -->
+                        <span class="drag-handle" :title="$store.i18n.t('backends.drag_reorder')">&#x2261;</span>
+
+                        <!-- Name & URL -->
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="font-weight: 600; font-size: 0.9rem;" x-text="b.name"></span>
+                                <span style="color: var(--text-muted); font-size: 0.7rem;"
+                                      x-text="'P:' + b.priority"></span>
+                            </div>
+                            <div style="color: var(--text-muted); font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+                                 x-text="b.base_url"></div>
+                        </div>
+
+                        <!-- Circuit Breaker Status -->
+                        <div style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text-secondary);">
+                            <span>CB:</span>
+                            <span class="status-dot" :class="b.circuit_breaker.state"></span>
+                            <span x-text="$store.panel.cbStateLabel(b.circuit_breaker.state)"></span>
+                        </div>
+
+                        <!-- SCID Toggle -->
+                        <div style="display: flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; color: var(--text-muted);"
+                             title="SCID Feature">
+                            <span>SCID</span>
+                            <label class="toggle" style="width: 32px; height: 18px;">
+                                <input type="checkbox" :checked="b.scid_enabled"
+                                       @change="$store.panel.toggleScid(b.key)">
+                                <span class="slider" style="--toggle-size: 12px;"></span>
+                            </label>
+                        </div>
+
+                        <!-- Enable Toggle -->
+                        <label class="toggle">
+                            <input type="checkbox" :checked="b.enabled"
+                                   @change="$store.panel.toggleBackend(b.key)">
+                            <span class="slider"></span>
+                        </label>
+
+                        <!-- Expand Button -->
+                        <button class="btn-ghost" style="padding: 0.3rem 0.5rem; font-size: 0.75rem;"
+                                @click="$store.panel.toggleExpand(b.key)">
+                            <span x-text="$store.panel.expandedBackend === b.key ? '▲' : '▼'"></span>
+                        </button>
+                    </div>
+
+                    <!-- Expanded Details -->
+                    <div class="expand-section" :class="{ open: $store.panel.expandedBackend === b.key }">
+                        <div style="border-top: 1px solid var(--border-subtle); padding-top: 1rem; display: grid; gap: 0.75rem;">
+
+                            <!-- Endpoint URL -->
+                            <div>
+                                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" x-text="$store.i18n.t('backends.endpoint')"></label>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <input class="input-field" style="flex:1" :value="b.base_url"
+                                           @change="$store.panel.updateBackend(b.key, { base_url: $event.target.value })">
+                                </div>
+                            </div>
+
+                            <!-- Timeout Fields -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem;">
+                                <div>
+                                    <label style="font-size: 0.7rem; color: var(--text-muted);" x-text="$store.i18n.t('backends.timeout')"></label>
+                                    <input class="input-field" type="number" :value="b.timeout"
+                                           @change="$store.panel.updateBackend(b.key, { timeout: parseFloat($event.target.value) })">
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.7rem; color: var(--text-muted);" x-text="$store.i18n.t('backends.stream_timeout')"></label>
+                                    <input class="input-field" type="number" :value="b.stream_timeout"
+                                           @change="$store.panel.updateBackend(b.key, { stream_timeout: parseFloat($event.target.value) })">
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.7rem; color: var(--text-muted);" x-text="$store.i18n.t('backends.max_retries')"></label>
+                                    <input class="input-field" type="number" :value="b.max_retries"
+                                           @change="$store.panel.updateBackend(b.key, { max_retries: parseInt($event.target.value) })">
+                                </div>
+                            </div>
+
+                            <!-- API Keys -->
+                            <div>
+                                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">
+                                    <span x-text="$store.i18n.t('backends.api_keys')"></span> (<span x-text="b.api_keys_count"></span>)
+                                </label>
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.5rem;">
+                                    <template x-for="(mk, idx) in b.api_keys_masked" :key="idx">
+                                        <span class="key-pill">
+                                            <span x-text="mk"></span>
+                                            <button style="background:none;border:none;color:var(--accent-red);cursor:pointer;font-size:0.85rem;padding:0;"
+                                                    @click="$store.panel.deleteApiKey(b.key, idx)"
+                                                    :title="$store.i18n.t('backends.remove_key')">&times;</button>
+                                        </span>
+                                    </template>
+                                </div>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <input class="input-field" style="flex:1" placeholder="sk-..."
+                                           x-model="$store.panel.newKeyInput"
+                                           @keydown.enter="$store.panel.addApiKey(b.key)">
+                                    <button class="btn-ghost" @click="$store.panel.addApiKey(b.key)" x-text="$store.i18n.t('backends.add_key')"></button>
+                                </div>
+                            </div>
+
+                            <!-- Supported Models -->
+                            <div>
+                                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" x-text="$store.i18n.t('backends.supported_models')"></label>
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
+                                    <template x-for="m in b.supported_models" :key="m">
+                                        <span style="font-size: 0.7rem; padding: 0.15rem 0.4rem; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--text-secondary);"
+                                              x-text="m"></span>
+                                    </template>
+                                    <span x-show="!b.supported_models || b.supported_models.length === 0"
+                                          style="font-size: 0.7rem; color: var(--text-muted);" x-text="$store.i18n.t('backends.all_models')"></span>
+                                </div>
+                            </div>
+
+                            <!-- Circuit Breaker Reset -->
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                                    <span x-text="$store.i18n.t('backends.circuit_breaker')"></span>
+                                    <span class="status-dot" :class="b.circuit_breaker.state" style="margin-left: 0.25rem;"></span>
+                                    <span x-text="$store.panel.cbStateLabel(b.circuit_breaker.state)"></span>
+                                    <span x-show="b.circuit_breaker.remaining_timeout > 0"
+                                          x-text="'(' + b.circuit_breaker.remaining_timeout + 's remaining)'"></span>
+                                </div>
+                                <button class="btn-ghost btn-danger" style="font-size: 0.7rem;"
+                                        @click="$store.panel.resetCircuitBreaker(b.key)"
+                                        x-show="b.circuit_breaker.state !== 'closed'"
+                                        x-text="$store.i18n.t('backends.reset_cb')">
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Add Backend Button / Form -->
+        <div style="margin-top: 1rem;">
+            <button class="btn-ghost" style="width: 100%; padding: 0.75rem; font-size: 0.85rem; border: 2px dashed var(--border-subtle); border-radius: 12px;"
+                    x-show="!$store.panel.showAddBackendForm"
+                    @click="$store.panel.showAddBackendForm = true"
+                    x-text="$store.i18n.t('backends.add_backend')">
+            </button>
+
+            <!-- Collapsible Add Backend Form -->
+            <div class="glass-card" style="padding: 1.25rem;"
+                 x-show="$store.panel.showAddBackendForm"
+                 x-transition>
+                <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0 0 1rem 0;" x-text="$store.i18n.t('backends.add_backend_title')"></h3>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <!-- Key -->
+                    <div>
+                        <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" x-text="$store.i18n.t('backends.key')"></label>
+                        <input class="input-field" x-model="$store.panel.newBackend.key" placeholder="my-backend">
+                    </div>
+                    <!-- Name -->
+                    <div>
+                        <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" x-text="$store.i18n.t('backends.name')"></label>
+                        <input class="input-field" x-model="$store.panel.newBackend.name" placeholder="My Backend">
+                    </div>
+                    <!-- Base URL (full width) -->
+                    <div style="grid-column: 1 / -1;">
+                        <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" x-text="$store.i18n.t('backends.base_url')"></label>
+                        <input class="input-field" x-model="$store.panel.newBackend.base_url" placeholder="http://localhost:8080/v1">
+                    </div>
+                    <!-- Priority -->
+                    <div>
+                        <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" x-text="$store.i18n.t('backends.priority')"></label>
+                        <input class="input-field" type="number" x-model="$store.panel.newBackend.priority">
+                    </div>
+                    <!-- API Format -->
+                    <div>
+                        <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" x-text="$store.i18n.t('backends.api_format')"></label>
+                        <select class="input-field" x-model="$store.panel.newBackend.api_format">
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <!-- Timeout -->
+                    <div>
+                        <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" x-text="$store.i18n.t('backends.timeout')"></label>
+                        <input class="input-field" type="number" x-model="$store.panel.newBackend.timeout">
+                    </div>
+                    <!-- Stream Timeout -->
+                    <div>
+                        <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" x-text="$store.i18n.t('backends.stream_timeout')"></label>
+                        <input class="input-field" type="number" x-model="$store.panel.newBackend.stream_timeout">
+                    </div>
+                    <!-- Max Retries -->
+                    <div>
+                        <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" x-text="$store.i18n.t('backends.max_retries')"></label>
+                        <input class="input-field" type="number" x-model="$store.panel.newBackend.max_retries">
+                    </div>
+                    <!-- Enabled -->
+                    <div style="display: flex; align-items: flex-end;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-secondary); cursor: pointer;">
+                            <input type="checkbox" x-model="$store.panel.newBackend.enabled">
+                            <span x-text="$store.i18n.t('backends.enabled')"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
+                    <button class="btn-ghost" @click="$store.panel.resetNewBackendForm()" x-text="$store.i18n.t('backends.cancel')"></button>
+                    <button class="btn-primary" @click="$store.panel.addBackend()" x-text="$store.i18n.t('backends.submit')"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== TAB 2: MODEL ROUTING ==================== -->
+    <div x-show="$store.panel.activeTab === 'routing'" x-cloak>
+        <div style="display: grid; grid-template-columns: 220px 1fr; gap: 1rem; min-height: 400px;">
+
+            <!-- Model List -->
+            <div class="glass-card" style="padding: 0.75rem; overflow-y: auto; max-height: 600px;">
+                <div style="font-size: 0.75rem; color: var(--text-muted); padding: 0.25rem 0.5rem; margin-bottom: 0.5rem;">
+                    <span x-text="$store.i18n.t('routing.models')"></span> (<span x-text="$store.panel.routingModels.length"></span>)
+                </div>
+                <template x-for="m in $store.panel.routingModels" :key="m">
+                    <div class="model-item"
+                         :class="{ active: $store.panel.selectedModel === m }"
+                         @click="$store.panel.selectedModel = m"
+                         x-text="m"></div>
+                </template>
+
+                <!-- Add Model -->
+                <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-subtle);"
+                     x-data="{ newModel: '' }">
+                    <input class="input-field" style="font-size: 0.8rem; margin-bottom: 0.35rem;"
+                           :placeholder="$store.i18n.t('routing.model_placeholder')"
+                           x-model="newModel"
+                           @keydown.enter="if(newModel.trim()){$store.panel.addModel(newModel.trim()); newModel='';}">
+                    <button class="btn-ghost" style="width: 100%; font-size: 0.75rem;"
+                            @click="if(newModel.trim()){$store.panel.addModel(newModel.trim()); newModel='';}"
+                            x-text="$store.i18n.t('routing.add_model')">
+                    </button>
+                </div>
+            </div>
+
+            <!-- Fallback Chain Editor -->
+            <div class="glass-card" style="padding: 1.25rem;">
+                <template x-if="$store.panel.selectedRule">
+                    <div>
+                        <h3 style="font-size: 1rem; font-weight: 600; margin: 0 0 0.25rem 0;"
+                            x-text="$store.panel.selectedModel"></h3>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0 0 1rem 0;" x-text="$store.i18n.t('routing.fallback_chain')"></p>
+
+                        <!-- Chain Nodes -->
+                        <div id="chain-editor"
+                             x-effect="initChainSortable('chain-editor', $store.panel.selectedModel, (newChain) => $store.panel.reorderChain($store.panel.selectedModel, newChain))">
+                            <template x-for="(entry, idx) in $store.panel.selectedRule.backend_chain" :key="entry.backend + ':' + entry.model">
+                                <div class="chain-item" :data-backend="entry.backend" :data-model="entry.model"
+                                     style="margin-bottom: 0.5rem;">
+                                    <div class="chain-node">
+                                        <span class="drag-handle">&#x2261;</span>
+                                        <span style="font-weight: 500;" x-text="entry.backend"></span>
+                                        <template x-if="entry.model !== $store.panel.selectedModel">
+                                            <span style="color: var(--accent-purple); font-size: 0.75rem;"
+                                                  x-text="'/ ' + entry.model"></span>
+                                        </template>
+                                        <div style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem;">
+                                            <button class="btn-move" :disabled="idx === 0"
+                                                    @click="$store.panel.moveChainNode($store.panel.selectedModel, idx, -1)">&uarr;</button>
+                                            <button class="btn-move"
+                                                    :disabled="idx === $store.panel.selectedRule.backend_chain.length - 1"
+                                                    @click="$store.panel.moveChainNode($store.panel.selectedModel, idx, 1)">&darr;</button>
+                                            <button style="background: none; border: none; color: var(--accent-red); cursor: pointer; font-size: 0.9rem; padding: 0;"
+                                                    @click="$store.panel.removeChainNode($store.panel.selectedModel, idx)"
+                                                    title="Remove node">&times;</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- Add Chain Node -->
+                        <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;"
+                             x-data="{ addBackend: '', addModel: '' }">
+                            <input class="input-field" style="flex: 1; font-size: 0.8rem;"
+                                   :placeholder="$store.i18n.t('routing.backend_key_placeholder')"
+                                   x-model="addBackend">
+                            <input class="input-field" style="flex: 1; font-size: 0.8rem;"
+                                   :placeholder="$store.i18n.t('routing.target_model_placeholder')"
+                                   x-model="addModel">
+                            <button class="btn-ghost" style="font-size: 0.75rem; white-space: nowrap;"
+                                    @click="if(addBackend.trim()){$store.panel.addChainNode($store.panel.selectedModel, addBackend.trim(), addModel.trim()); addBackend=''; addModel='';}"
+                                    x-text="$store.i18n.t('routing.add')">
+                            </button>
+                        </div>
+
+                        <!-- Fallback Conditions -->
+                        <div style="margin-top: 1.25rem;">
+                            <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.5rem;"
+                                   x-text="$store.i18n.t('routing.fallback_on')">
+                            </label>
+                            <div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">
+                                <template x-for="code in [400, 401, 403, 429, 500, 502, 503, 504, 529, 'timeout', 'connection_error', 'unavailable']" :key="code">
+                                    <span class="fallback-badge"
+                                          :class="{ active: $store.panel.isFallbackActive($store.panel.selectedModel, code) }"
+                                          @click="$store.panel.toggleFallbackCondition($store.panel.selectedModel, code)"
+                                          x-text="code"></span>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="!$store.panel.selectedRule">
+                    <div style="display: flex; align-items: center; justify-content: center; height: 200px; color: var(--text-muted); font-size: 0.85rem;"
+                         x-text="$store.i18n.t('routing.select_model')">
+                    </div>
+                </template>
+            </div>
+        </div>
+
+    <!-- ==================== Cross-Model Fallback Sub-Section ==================== -->
+    <div class="glass-card" style="margin-top: 1rem; padding: 1.25rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+            <div>
+                <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0;" x-text="$store.i18n.t('xmodel.title')"></h3>
+                <p style="font-size: 0.7rem; color: var(--text-muted); margin: 0.25rem 0 0 0;"
+                   x-text="$store.i18n.t('xmodel.desc')">
+                </p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <label style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text-muted);">
+                    <input type="checkbox" x-model="$store.panel.crossModelFallback.enabled"> <span x-text="$store.i18n.t('xmodel.enabled')"></span>
+                </label>
+                <button class="btn-ghost" style="font-size: 0.7rem;" @click="$store.panel.saveCrossModelFallback()" x-text="$store.i18n.t('xmodel.save')"></button>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 0.35rem; font-size: 0.7rem; color: var(--text-muted); padding: 0 0.25rem; margin-bottom: 0.25rem;">
+            <span x-text="$store.i18n.t('xmodel.source_pattern')"></span><span x-text="$store.i18n.t('xmodel.fallback_model')"></span><span x-text="$store.i18n.t('xmodel.backend')"></span><span></span>
+        </div>
+        <template x-for="(rule, idx) in $store.panel.crossModelFallback.rules" :key="idx + '-' + rule.pattern">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 0.35rem; margin-bottom: 0.35rem;">
+                <input class="input-field" style="font-size: 0.8rem;" x-model="rule.pattern" placeholder="claude-*opus*">
+                <input class="input-field" style="font-size: 0.8rem;" x-model="rule.fallback_model" placeholder="gemini-3-pro-high">
+                <input class="input-field" style="font-size: 0.8rem;" x-model="rule.backend" placeholder="gcli2api-antigravity">
+                <button style="background: none; border: none; color: var(--accent-red); cursor: pointer; font-size: 1rem; padding: 0 0.25rem;"
+                        @click="$store.panel.removeCrossModelRule(idx)" title="Remove">&times;</button>
+            </div>
+        </template>
+        <button class="btn-ghost" style="font-size: 0.7rem; margin-top: 0.25rem;"
+                @click="$store.panel.addCrossModelRule()" x-text="$store.i18n.t('xmodel.add_rule')"></button>
+    </div>
+
+    <!-- ==================== Default Routing Sub-Section ==================== -->
+    <div class="glass-card" style="margin-top: 1rem; padding: 1.25rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+            <div>
+                <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0;" x-text="$store.i18n.t('defroute.title')"></h3>
+                <p style="font-size: 0.7rem; color: var(--text-muted); margin: 0.25rem 0 0 0;"
+                   x-text="$store.i18n.t('defroute.desc')">
+                </p>
+            </div>
+            <button class="btn-ghost" style="font-size: 0.7rem;" @click="$store.panel.saveDefaultRouting()" x-text="$store.i18n.t('defroute.save')"></button>
+        </div>
+
+        <template x-for="(rule, rIdx) in $store.panel.defaultRouting.rules" :key="rIdx + '-' + rule.pattern">
+            <div class="glass-card" style="padding: 0.75rem; margin-bottom: 0.5rem; background: rgba(255,255,255,0.02);">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <span style="font-size: 0.7rem; color: var(--text-muted);" x-text="$store.i18n.t('defroute.pattern')"></span>
+                    <input class="input-field" style="font-size: 0.8rem; flex: 1;" x-model="rule.pattern" placeholder="claude-*">
+                    <button style="background: none; border: none; color: var(--accent-red); cursor: pointer; font-size: 1rem;"
+                            @click="$store.panel.removeDefaultRoutingRule(rIdx)" title="Remove rule">&times;</button>
+                </div>
+                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.35rem;" x-text="$store.i18n.t('defroute.chain')"></div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.5rem;">
+                    <template x-for="(node, nIdx) in rule.chain" :key="nIdx + '-' + node.backend">
+                        <span style="display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 0.2rem 0.5rem; font-size: 0.75rem;">
+                            <span x-text="node.backend" style="font-weight: 500;"></span>
+                            <button style="background: none; border: none; color: var(--accent-red); cursor: pointer; font-size: 0.8rem; padding: 0; margin-left: 0.15rem;"
+                                    @click="$store.panel.removeChainNodeFromDefaultRule(rIdx, nIdx)">&times;</button>
+                        </span>
+                    </template>
+                    <button style="display: inline-flex; align-items: center; background: none; border: 1px dashed var(--border-subtle); border-radius: 6px; padding: 0.2rem 0.5rem; font-size: 0.7rem; color: var(--text-muted); cursor: pointer;"
+                            @click="$store.panel.addChainNodeToDefaultRule(rIdx)">+</button>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.2rem;">
+                    <template x-for="code in (rule.fallback_on || [])" :key="rIdx + '-fo-' + code">
+                        <span style="font-size: 0.65rem; background: rgba(255,255,255,0.05); border-radius: 4px; padding: 0.1rem 0.35rem; color: var(--text-muted);"
+                              x-text="code"></span>
+                    </template>
+                </div>
+            </div>
+        </template>
+        <button class="btn-ghost" style="font-size: 0.7rem; margin-top: 0.25rem;"
+                @click="$store.panel.addDefaultRoutingRule()" x-text="$store.i18n.t('defroute.add_rule')"></button>
+
+        <!-- Catch-All -->
+        <template x-if="$store.panel.defaultRouting.catch_all">
+            <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-subtle);">
+                <div style="font-size: 0.75rem; font-weight: 500; margin-bottom: 0.35rem; color: var(--accent-yellow);"
+                     x-text="$store.i18n.t('defroute.catch_all')">
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
+                    <template x-for="(node, nIdx) in $store.panel.defaultRouting.catch_all.chain" :key="'ca-' + nIdx">
+                        <span style="display: inline-flex; align-items: center; gap: 0.15rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 0.2rem 0.5rem; font-size: 0.75rem; font-weight: 500;"
+                              x-text="node.backend"></span>
+                    </template>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- ==================== Final Fallback Sub-Section ==================== -->
+    <div class="glass-card" style="margin-top: 1rem; padding: 1.25rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div>
+                <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0;" x-text="$store.i18n.t('finalfb.title')"></h3>
+                <p style="font-size: 0.7rem; color: var(--text-muted); margin: 0.25rem 0 0 0;"
+                   x-text="$store.i18n.t('finalfb.desc')">
+                </p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <label style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text-muted);">
+                    <input type="checkbox" x-model="$store.panel.finalFallback.enabled"> <span x-text="$store.i18n.t('finalfb.enabled')"></span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text-muted);">
+                    <input type="checkbox" x-model="$store.panel.finalFallback.respect_circuit_breaker"> <span x-text="$store.i18n.t('finalfb.respect_cb')"></span>
+                </label>
+                <input class="input-field" style="width: 150px; font-size: 0.8rem;"
+                       x-model="$store.panel.finalFallback.backend" placeholder="copilot">
+                <button class="btn-ghost" style="font-size: 0.7rem;" @click="$store.panel.saveFinalFallback()" x-text="$store.i18n.t('finalfb.save')"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== Backend Capabilities Sub-Section (P2) ==================== -->
+    <div class="glass-card" style="margin-top: 1rem; padding: 1.25rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+            <div>
+                <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0;" x-text="$store.i18n.t('caps.title')"></h3>
+                <p style="font-size: 0.7rem; color: var(--text-muted); margin: 0.25rem 0 0 0;"
+                   x-text="$store.i18n.t('caps.desc')">
+                </p>
+            </div>
+            <button class="btn-ghost" style="font-size: 0.7rem;" @click="$store.panel.saveBackendCapabilities()"
+                    x-text="$store.i18n.t('caps.save')">
+            </button>
+        </div>
+
+        <template x-for="[backend, caps] of Object.entries($store.panel.backendCapabilities)" :key="backend">
+            <div style="background: rgba(255,255,255,0.03); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.5rem; border: 1px solid rgba(255,255,255,0.06);">
+                <div style="font-size: 0.85rem; font-weight: 600; color: var(--accent-blue); margin-bottom: 0.5rem;" x-text="backend"></div>
+
+                <!-- Include Patterns -->
+                <div style="margin-bottom: 0.4rem;">
+                    <span style="font-size: 0.7rem; color: var(--accent-green); font-weight: 500;" x-text="$store.i18n.t('caps.include')"></span>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.25rem; align-items: center;">
+                        <template x-for="(pat, idx) in (caps.include_patterns || [])" :key="idx">
+                            <span style="background: rgba(76,175,80,0.15); color: var(--accent-green); font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; display: flex; align-items: center; gap: 4px;">
+                                <span x-text="pat"></span>
+                                <button style="background:none; border:none; color:var(--accent-red); cursor:pointer; font-size:0.65rem; padding:0;"
+                                        @click="$store.panel.removeCapabilityPattern(backend, 'include_patterns', idx)">&times;</button>
+                            </span>
+                        </template>
+                        <div style="display: flex; gap: 0.2rem; align-items: center;">
+                            <input class="input-field" style="width: 120px; font-size: 0.7rem; padding: 2px 6px;"
+                                   x-model="$store.panel.newCapPattern[backend + '_include_patterns']"
+                                   placeholder="pattern*" @keyup.enter="$store.panel.addCapabilityPattern(backend, 'include_patterns')">
+                            <button class="btn-ghost" style="font-size: 0.6rem; padding: 2px 6px;"
+                                    @click="$store.panel.addCapabilityPattern(backend, 'include_patterns')">+</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Exclude Patterns -->
+                <div>
+                    <span style="font-size: 0.7rem; color: var(--accent-red); font-weight: 500;" x-text="$store.i18n.t('caps.exclude')"></span>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.25rem; align-items: center;">
+                        <template x-for="(pat, idx) in (caps.exclude_patterns || [])" :key="idx">
+                            <span style="background: rgba(244,67,54,0.15); color: var(--accent-red); font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; display: flex; align-items: center; gap: 4px;">
+                                <span x-text="pat"></span>
+                                <button style="background:none; border:none; color:var(--accent-yellow); cursor:pointer; font-size:0.65rem; padding:0;"
+                                        @click="$store.panel.removeCapabilityPattern(backend, 'exclude_patterns', idx)">&times;</button>
+                            </span>
+                        </template>
+                        <div style="display: flex; gap: 0.2rem; align-items: center;">
+                            <input class="input-field" style="width: 120px; font-size: 0.7rem; padding: 2px 6px;"
+                                   x-model="$store.panel.newCapPattern[backend + '_exclude_patterns']"
+                                   placeholder="*haiku*" @keyup.enter="$store.panel.addCapabilityPattern(backend, 'exclude_patterns')">
+                            <button class="btn-ghost" style="font-size: 0.6rem; padding: 2px 6px;"
+                                    @click="$store.panel.addCapabilityPattern(backend, 'exclude_patterns')">+</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- ==================== Copilot Model Mapping Sub-Section (P2) ==================== -->
+    <div class="glass-card" style="margin-top: 1rem; padding: 1.25rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+            <div>
+                <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0;" x-text="$store.i18n.t('mapping.title')"></h3>
+                <p style="font-size: 0.7rem; color: var(--text-muted); margin: 0.25rem 0 0 0;"
+                   x-text="$store.i18n.t('mapping.desc')">
+                </p>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <span style="font-size: 0.7rem; color: var(--text-muted);"
+                      x-text="Object.keys($store.panel.copilotModelMapping).length + ' ' + $store.i18n.t('mapping.entries')"></span>
+                <button class="btn-ghost" style="font-size: 0.7rem;" @click="$store.panel.saveCopilotModelMapping()"
+                        x-text="$store.i18n.t('mapping.save')">
+                </button>
+            </div>
+        </div>
+
+        <!-- Add new mapping row -->
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; align-items: center;">
+            <input class="input-field" style="flex: 1; font-size: 0.8rem;"
+                   x-model="$store.panel.newMappingSource" :placeholder="$store.i18n.t('mapping.source_placeholder')">
+            <span style="font-size: 0.8rem; color: var(--text-muted);">&rarr;</span>
+            <input class="input-field" style="flex: 1; font-size: 0.8rem;"
+                   x-model="$store.panel.newMappingTarget" :placeholder="$store.i18n.t('mapping.target_placeholder')">
+            <button class="btn-ghost" style="font-size: 0.75rem;" @click="$store.panel.addMappingEntry()" x-text="$store.i18n.t('mapping.add')"></button>
+        </div>
+
+        <!-- Mapping table -->
+        <div style="max-height: 300px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+                <thead>
+                    <tr style="background: rgba(255,255,255,0.04);">
+                        <th style="text-align: left; padding: 6px 10px; color: var(--text-muted); font-weight: 500;" x-text="$store.i18n.t('mapping.col_source')"></th>
+                        <th style="text-align: center; padding: 6px; color: var(--text-muted);">&rarr;</th>
+                        <th style="text-align: left; padding: 6px 10px; color: var(--text-muted); font-weight: 500;" x-text="$store.i18n.t('mapping.col_target')"></th>
+                        <th style="width: 40px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="[src, tgt] of Object.entries($store.panel.copilotModelMapping).sort()" :key="src">
+                        <tr style="border-top: 1px solid rgba(255,255,255,0.04);">
+                            <td style="padding: 5px 10px; font-family: monospace; color: var(--text-secondary);" x-text="src"></td>
+                            <td style="text-align: center; color: var(--text-muted);">&rarr;</td>
+                            <td style="padding: 5px 10px; font-family: monospace; color: var(--accent-blue);" x-text="tgt"></td>
+                            <td style="text-align: center;">
+                                <button style="background:none; border:none; color:var(--accent-red); cursor:pointer; font-size:0.7rem;"
+                                        @click="$store.panel.removeMappingEntry(src)">&times;</button>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ==================== Runtime Flags (AnyRouter Env Var Migration) ==================== -->
+    <div class="glass-card config-section" style="margin-top: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h3 style="margin: 0; font-size: 0.85rem; color: var(--text-primary);" x-text="$store.i18n.t('flags.title')"></h3>
+            <button class="btn-primary" style="font-size: 0.7rem; padding: 4px 10px;"
+                    @click="$store.panel.saveRuntimeFlags()" x-text="$store.i18n.t('flags.save')"></button>
+        </div>
+        <p style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.75rem;"
+           x-text="$store.i18n.t('flags.desc')">
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+            <template x-for="[name, info] of Object.entries($store.panel.runtimeFlags)" :key="name">
+                <div style="display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+                            background: rgba(255,255,255,0.02); border-radius: 6px;
+                            border: 1px solid rgba(255,255,255,0.06);">
+
+                    <!-- Toggle -->
+                    <label style="position: relative; display: inline-block; width: 36px; height: 20px; cursor: pointer; flex-shrink: 0;">
+                        <input type="checkbox" :checked="info.effective"
+                               @change="$store.panel.toggleRuntimeFlag(name)"
+                               style="opacity:0; width:0; height:0;">
+                        <span style="position: absolute; inset: 0; border-radius: 10px; transition: background 0.2s;"
+                              :style="info.effective ? 'background: var(--accent-green)' : 'background: rgba(255,255,255,0.15)'"></span>
+                        <span style="position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+                                     background: white; border-radius: 50%; transition: transform 0.2s;"
+                              :style="info.effective ? 'transform: translateX(16px)' : ''"></span>
+                    </label>
+
+                    <!-- Flag name -->
+                    <span style="font-family: monospace; font-size: 0.72rem; color: var(--text-secondary); flex: 1;"
+                          x-text="name"></span>
+
+                    <!-- Source indicator -->
+                    <span style="font-size: 0.6rem; padding: 1px 5px; border-radius: 3px; flex-shrink: 0;"
+                          :style="info.yaml_value !== null && info.yaml_value !== undefined
+                                  ? 'background: rgba(99,102,241,0.2); color: var(--accent-blue)'
+                                  : info.env_value !== null && info.env_value !== undefined
+                                    ? 'background: rgba(245,158,11,0.2); color: var(--accent-yellow)'
+                                    : 'background: rgba(255,255,255,0.06); color: var(--text-muted)'"
+                          x-text="info.yaml_value !== null && info.yaml_value !== undefined
+                                  ? 'YAML' : info.env_value !== null && info.env_value !== undefined
+                                    ? 'ENV' : 'DEFAULT'"></span>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    </div>
+
+
+    <div x-show="$store.panel.activeTab === 'health'" x-cloak>
+
+        <!-- Summary Stats -->
+        <template x-if="$store.panel.healthData">
+        <div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.5rem;">
+                <div class="glass-card stat-card">
+                    <div class="stat-value" x-text="$store.panel.healthData.summary.total"></div>
+                    <div class="stat-label" x-text="$store.i18n.t('health.total')"></div>
+                </div>
+                <div class="glass-card stat-card">
+                    <div class="stat-value" style="color: var(--accent-blue);"
+                         x-text="$store.panel.healthData.summary.enabled"></div>
+                    <div class="stat-label" x-text="$store.i18n.t('health.enabled')"></div>
+                </div>
+                <div class="glass-card stat-card">
+                    <div class="stat-value" style="color: var(--accent-green);"
+                         x-text="$store.panel.healthData.summary.healthy"></div>
+                    <div class="stat-label" x-text="$store.i18n.t('health.healthy')"></div>
+                </div>
+                <div class="glass-card stat-card">
+                    <div class="stat-value" style="color: var(--accent-purple);"
+                         x-text="$store.panel.statsData ? $store.panel.formatUptime($store.panel.statsData.global.uptime_seconds) : '-'"></div>
+                    <div class="stat-label" x-text="$store.i18n.t('health.uptime')"></div>
+                </div>
+            </div>
+
+            <!-- Health Cards -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0.75rem;">
+                <template x-for="(info, key) in $store.panel.healthData.backends" :key="key">
+                    <div class="glass-card health-card">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span class="status-dot"
+                                      :class="info.healthy && info.enabled ? 'healthy' : (!info.enabled ? 'degraded' : 'down')"></span>
+                                <span style="font-weight: 600; font-size: 0.9rem;" x-text="info.name"></span>
+                            </div>
+                            <span style="font-size: 0.7rem; color: var(--text-muted);"
+                                  x-text="info.enabled ? '' : 'DISABLED'"
+                                  :style="!info.enabled ? 'color: var(--accent-yellow)' : ''"></span>
+                        </div>
+
+                        <!-- Stats from collector -->
+                        <template x-if="$store.panel.statsData && $store.panel.statsData.backends[key]">
+                            <div>
+                                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.35rem;">
+                                    <span style="color: var(--text-secondary);" x-text="$store.i18n.t('health.success_rate')"></span>
+                                    <span :style="'color:' + $store.panel.getHealthColor($store.panel.statsData.backends[key].success_rate)"
+                                          x-text="$store.panel.statsData.backends[key].success_rate + '%'"></span>
+                                </div>
+                                <div class="progress-bar">
+                                    <div class="fill"
+                                         :style="'width:' + $store.panel.statsData.backends[key].success_rate + '%; background:' + $store.panel.getHealthColor($store.panel.statsData.backends[key].success_rate)"></div>
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
+                                    <div><span x-text="$store.i18n.t('health.requests')"></span> <span style="color: var(--text-secondary);" x-text="$store.panel.statsData.backends[key].total_requests"></span></div>
+                                    <div><span x-text="$store.i18n.t('health.avg')"></span> <span style="color: var(--text-secondary);" x-text="$store.panel.statsData.backends[key].avg_response_time_ms + 'ms'"></span></div>
+                                </div>
+                            </div>
+                        </template>
+                        <template x-if="!$store.panel.statsData || !$store.panel.statsData.backends[key]">
+                            <div style="font-size: 0.8rem; color: var(--text-muted);" x-text="$store.i18n.t('health.no_traffic')"></div>
+                        </template>
+
+                        <!-- Circuit Breaker -->
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-subtle);">
+                            <div style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text-muted);">
+                                CB:
+                                <span class="status-dot" :class="info.circuit_breaker.state"></span>
+                                <span x-text="$store.panel.cbStateLabel(info.circuit_breaker.state)"></span>
+                            </div>
+                            <button class="btn-ghost btn-danger" style="font-size: 0.65rem; padding: 0.2rem 0.5rem;"
+                                    @click="$store.panel.resetCircuitBreaker(key)"
+                                    x-show="info.circuit_breaker.state !== 'closed'">
+                                Reset
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+        </template>
+
+        <template x-if="!$store.panel.healthData">
+            <div style="text-align: center; padding: 3rem; color: var(--text-muted);" x-text="$store.i18n.t('health.loading')"></div>
+        </template>
+    </div>
+
+    <!-- ==================== TAB 4: CLIENT SETTINGS ==================== -->
+    <div x-show="$store.panel.activeTab === 'clients'" x-cloak>
+        <div style="margin-bottom: 1rem;">
+            <p style="color: var(--text-muted); font-size: 0.8rem;"
+               x-text="$store.i18n.t('clients.desc')">
+            </p>
+        </div>
+
+        <!-- Feature Legend -->
+        <div class="glass-card" style="padding: 0.75rem 1rem; margin-bottom: 1rem;">
+            <div style="display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.75rem;">
+                <template x-for="feat in Object.keys($store.panel.clientFeatureDescriptions)" :key="feat">
+                    <div style="display: flex; align-items: center; gap: 0.35rem;">
+                        <span style="font-weight: 600; color: var(--accent-purple);" x-text="$store.panel.featureLabel(feat)"></span>
+                        <span style="color: var(--text-muted);" x-text="'— ' + $store.panel.clientFeatureDescriptions[feat]"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Client Cards Grid -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 0.75rem;">
+            <template x-for="ct in $store.panel.clientTypes" :key="ct">
+                <div class="glass-card" style="padding: 1rem 1.25rem;">
+                    <!-- Client Header -->
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                        <span style="font-size: 1.1rem;" x-text="$store.panel.clientIcon(ct)"></span>
+                        <div>
+                            <div style="font-weight: 600; font-size: 0.9rem;" x-text="$store.panel.getClientDisplayName(ct)"></div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;" x-text="ct"></div>
+                        </div>
+                    </div>
+
+                    <!-- Feature Toggles -->
+                    <div style="display: grid; gap: 0.5rem;">
+                        <template x-for="feat in ['scid', 'sanitization', 'cross_pool_fallback', 'stateless', 'signature_recovery_only']" :key="feat">
+                            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.35rem 0;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span style="font-size: 0.8rem; color: var(--text-secondary); min-width: 90px;"
+                                          x-text="$store.panel.featureLabel(feat)"></span>
+                                </div>
+                                <label class="toggle">
+                                    <input type="checkbox"
+                                           :checked="$store.panel.isClientFeatureEnabled(ct, feat)"
+                                           @change="$store.panel.toggleClientFeature(ct, feat)">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+</div>
+</template>
+
+<!-- Save Banner -->
+<div class="save-banner"
+     :class="{ show: $store.panel.saveBanner.show, [$store.panel.saveBanner.type]: true }"
+     x-text="$store.panel.saveBanner.message">
+</div>
+
+</body>
+</html>

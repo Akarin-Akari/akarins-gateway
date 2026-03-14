@@ -87,6 +87,10 @@ class ClientTypeDetector:
         (ClientType.OPENAI_API, [r"node-fetch/", r"axios/", r"got/"], r"(?:node-fetch|axios|got)[/-](\d+(?:\.\d+)*)", "Node.js Client"),
     ]
 
+    # ==================== 可变客户端功能集合 ====================
+    # [REFACTOR 2026-03-14] 从 frozenset 改为 mutable set，支持 Panel 运行时调整
+    # 提供 get/set 类方法供 Panel API 使用
+
     # 需要消息净化的客户端类型 (IDE 客户端可能变形 thinking 文本)
     SANITIZATION_REQUIRED = {
         ClientType.CURSOR,
@@ -110,33 +114,111 @@ class ClientTypeDetector:
     }
 
     # [NEW 2026-02-03] 无状态模式客户端（CLI 工具）
-    # 这些客户端有自己的状态管理，不需要服务端 SCID 架构和签名恢复
-    # - 绕过 SCID 会话状态管理
-    # - 绕过 signature 恢复逻辑
-    # - 绕过 SESSION_MONITOR 监控
-    #
-    # [FIX 2026-02-04] Claude Code 从此列表移除
-    # 问题：Claude Code 需要签名恢复功能，完全绕过导致 400 Corrupted thought signature 错误
-    # 解决：Claude Code 现在使用轻量级签名恢复（只恢复签名，不启用完整 SCID 状态管理）
     STATELESS_CLIENTS = {
-        # ClientType.CLAUDE_CODE,      # [REMOVED 2026-02-04] 需要签名恢复，移至 SIGNATURE_RECOVERY_ONLY_CLIENTS
-        ClientType.CLINE,            # Cline 有 VSCode 扩展状态管理
-        ClientType.AIDER,            # Aider 有自己的会话状态
-        ClientType.CONTINUE_DEV,     # Continue.dev 有自己的状态管理
-        ClientType.OPENAI_API,       # 标准 API 调用，无状态
+        ClientType.CLINE,
+        ClientType.AIDER,
+        ClientType.CONTINUE_DEV,
+        ClientType.OPENAI_API,
     }
 
     # [NEW 2026-02-04] 需要签名恢复但跳过权威历史管理的客户端
-    # 这些客户端：
-    # - ✅ 启用签名缓存和恢复（6层策略）
-    # - ✅ 启用响应签名提取和缓存
-    # - ✗ 跳过 SCID 生成
-    # - ✗ 跳过权威历史管理
-    # - ✗ 跳过消息合并
-    # - ✗ 跳过检查点保存
     SIGNATURE_RECOVERY_ONLY_CLIENTS = {
-        ClientType.CLAUDE_CODE,      # Claude Code CLI 需要签名恢复，但不需要完整 SCID 状态管理
+        ClientType.CLAUDE_CODE,
     }
+
+    # [NEW 2026-03-14] SCID 功能启用的客户端（完整 SCID 状态管理）
+    # 不在 STATELESS_CLIENTS 且不在 SIGNATURE_RECOVERY_ONLY_CLIENTS 中的客户端默认启用 SCID
+    # 此集合用于在 Panel 中显式控制哪些客户端启用完整 SCID
+    SCID_ENABLED_CLIENTS = {
+        ClientType.CURSOR,
+        ClientType.AUGMENT,
+        ClientType.WINDSURF,
+        ClientType.ZED,
+        ClientType.COPILOT,
+    }
+
+    # ==================== 功能集合名称映射（Panel 用） ====================
+
+    _FEATURE_SETS = {
+        "sanitization": "SANITIZATION_REQUIRED",
+        "cross_pool_fallback": "CROSS_POOL_FALLBACK_ENABLED",
+        "stateless": "STATELESS_CLIENTS",
+        "signature_recovery_only": "SIGNATURE_RECOVERY_ONLY_CLIENTS",
+        "scid": "SCID_ENABLED_CLIENTS",
+    }
+
+    @classmethod
+    def get_all_client_settings(cls) -> Dict[str, Dict[str, bool]]:
+        """
+        获取所有客户端的所有功能设置（供 Panel API 使用）
+
+        Returns:
+            {client_type_value: {feature_name: bool, ...}, ...}
+        """
+        result = {}
+        for ct in ClientType:
+            if ct == ClientType.UNKNOWN:
+                continue  # Skip UNKNOWN in panel display
+            settings = {}
+            for feature_name, attr_name in cls._FEATURE_SETS.items():
+                feature_set = getattr(cls, attr_name)
+                settings[feature_name] = ct in feature_set
+            # Add display info
+            settings["display_name"] = cls._get_client_display_name(ct)
+            result[ct.value] = settings
+        return result
+
+    @classmethod
+    def set_client_feature(cls, client_type_value: str, feature: str, enabled: bool) -> bool:
+        """
+        设置指定客户端的功能开关（供 Panel API 使用）
+
+        Args:
+            client_type_value: 客户端类型值（如 "cursor", "claude_code"）
+            feature: 功能名称（sanitization, cross_pool_fallback, stateless, signature_recovery_only, scid）
+            enabled: 是否启用
+
+        Returns:
+            True if successful
+        """
+        # Resolve client type
+        try:
+            ct = ClientType(client_type_value)
+        except ValueError:
+            return False
+
+        # Resolve feature set
+        attr_name = cls._FEATURE_SETS.get(feature)
+        if not attr_name:
+            return False
+
+        feature_set = getattr(cls, attr_name)
+        if enabled:
+            feature_set.add(ct)
+        else:
+            feature_set.discard(ct)
+
+        log.info(
+            f"[CLIENT_DETECTOR] Panel: set {ct.value}.{feature} = {enabled}"
+        )
+        return True
+
+    @classmethod
+    def _get_client_display_name(cls, ct: ClientType) -> str:
+        """获取客户端显示名称"""
+        names = {
+            ClientType.CLAUDE_CODE: "Claude Code",
+            ClientType.CURSOR: "Cursor IDE",
+            ClientType.AUGMENT: "Augment / VSCode",
+            ClientType.WINDSURF: "Windsurf IDE",
+            ClientType.CLINE: "Cline",
+            ClientType.CONTINUE_DEV: "Continue.dev",
+            ClientType.AIDER: "Aider",
+            ClientType.ZED: "Zed Editor",
+            ClientType.COPILOT: "GitHub Copilot",
+            ClientType.OPENAI_API: "OpenAI API",
+        }
+        return names.get(ct, ct.value)
 
     @classmethod
     def detect(cls, headers: Dict[str, str]) -> ClientInfo:

@@ -918,10 +918,9 @@ def _filter_anyrouter_cursor_tools(
 # ==================== AnyRouter 抓包工具 ====================
 
 def _env_flag(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+    """[REFACTOR 2026-03-14] Unified flag reader: YAML runtime_flags > env var > default"""
+    from .config_loader import get_runtime_flag
+    return get_runtime_flag(name, default)
 
 
 # [FIX 2026-02-17] AnyRouter Cursor 路径对齐 Claude Code header 画像
@@ -1846,6 +1845,126 @@ def _is_valid_chat_completion_response(response_data: Any, backend_key: str = ""
     return True
 
 
+# ==================== Copilot Output-Style 强化注入 ====================
+# [FIX 2026-03-13] GitHub Copilot API 倾向于忽略 system prompt 中的自定义输出样式指令。
+# 解决方案: 从 Anthropic system 字段中提取 output-style 内容，
+# 额外注入到最后一条 user 消息中，确保模型在对话上下文中也能看到样式指令。
+
+
+def _extract_output_style_from_system(system) -> str | None:
+    """
+    Extract output-style content from Anthropic system field.
+
+    Scans system text blocks for '# Output Style:' marker and returns
+    everything from that marker to the end of the block.
+
+    Args:
+        system: Anthropic system field (str or list of TextBlocks)
+
+    Returns:
+        Extracted output-style text, or None if not found
+    """
+    texts = []
+    if isinstance(system, list):
+        for block in system:
+            if isinstance(block, dict) and block.get("type") == "text":
+                texts.append(block.get("text", ""))
+    elif isinstance(system, str):
+        texts.append(system)
+
+    for text in texts:
+        # Look for output-style marker (both half-width and full-width colon)
+        for marker in ("# Output Style:", "# Output Style："):
+            idx = text.find(marker)
+            if idx != -1:
+                return text[idx:].strip()
+
+    return None
+
+
+def _reinforce_output_style_for_copilot(body: dict) -> dict:
+    """
+    Reinforce output-style directives for Copilot backend.
+
+    GitHub Copilot API deprioritizes system prompt content, causing custom
+    output style directives (/output-style) to be ignored. This function
+    extracts output-style content from the Anthropic system field and injects
+    it into the last user message as reinforcement.
+
+    The content stays in the system field (for backends that respect it)
+    AND appears in the user message (for Copilot which doesn't).
+
+    Only applies to Anthropic /messages format requests.
+
+    Args:
+        body: Anthropic format request body with 'system' and 'messages'
+
+    Returns:
+        Modified body with output-style injected into last user message,
+        or original body if no output-style found
+    """
+    system = body.get("system")
+    if not system:
+        return body
+
+    # Step 1: Extract output-style content
+    output_style_text = _extract_output_style_from_system(system)
+    if not output_style_text:
+        return body
+
+    # Step 2: Find last user message to inject into
+    messages = body.get("messages", [])
+    if not messages:
+        return body
+
+    new_messages = list(messages)
+    injected = False
+
+    for i in range(len(new_messages) - 1, -1, -1):
+        msg = new_messages[i]
+        if msg.get("role") != "user":
+            continue
+
+        content = msg.get("content", "")
+        reinforcement = (
+            "<output_style_reinforcement>\n"
+            "CRITICAL: The following output style rules MUST be followed "
+            "in your response. These are non-negotiable directives:\n\n"
+            f"{output_style_text}\n"
+            "</output_style_reinforcement>"
+        )
+
+        # Inject as prepended content block (preserves original content structure)
+        if isinstance(content, list):
+            new_content = [
+                {"type": "text", "text": reinforcement},
+            ] + list(content)
+            new_messages[i] = {**msg, "content": new_content}
+        elif isinstance(content, str):
+            new_messages[i] = {
+                **msg,
+                "content": [
+                    {"type": "text", "text": reinforcement},
+                    {"type": "text", "text": content},
+                ],
+            }
+        else:
+            continue
+
+        injected = True
+        break
+
+    if not injected:
+        return body
+
+    log.info(
+        f"Reinforced output-style for Copilot backend "
+        f"({len(output_style_text)} chars injected into last user message)",
+        tag="COPILOT",
+    )
+    return {**body, "messages": new_messages}
+
+
 # ==================== 代理函数 ====================
 
 async def proxy_request_to_backend(
@@ -1968,6 +2087,12 @@ async def proxy_request_to_backend(
             if hasattr(log, 'route'):
                 log.route(f"Model mapped: {original_model} -> {mapped_model}", tag="COPILOT")
             body = {**body, "model": mapped_model}
+
+    # [FIX 2026-03-13] Copilot 后端: 强化 output-style 指令
+    # GitHub Copilot API 倾向于忽略 system prompt 中的自定义输出样式指令（如 /output-style）
+    # 从 Anthropic system 字段提取 output-style 内容，额外注入到最后一条 user 消息中
+    if backend_key == "copilot" and original_endpoint == "/messages" and body and isinstance(body, dict):
+        body = _reinforce_output_style_for_copilot(body)
 
     # ==================== Kiro Gateway: OpenAI -> Anthropic 格式转换 ====================
     # [FIX 2026-01-19] Kiro Gateway 使用 Anthropic 格式的 /messages 端点

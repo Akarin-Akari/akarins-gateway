@@ -182,12 +182,11 @@ PUBLIC_STATIONS: dict[str, PublicStationConfig] = {
         base_urls_fallback_env="ANYROUTER_ENDPOINT",
         base_urls_default=(
             "https://anyrouter.top,"
-            "https://api.anyrouter.cc/v1"
+            "https://a-ocnfniawgw.cn-shanghai.fcapp.run"
         ),
         api_keys_env="ANYROUTER_API_KEYS",
         api_keys_fallback_env="ANYROUTER_API_KEY",
         api_keys_default=(
-            "sk-E4L18390pp12BacrKa7IJV8hgztEo8SsPKFdtSYGx6vLEbDK,"
             "sk-be7LKJwag3qXSRL77tVbxUsIHEi71UfAVOvqjGI13BJiXGD5"
         ),
         # Timeouts
