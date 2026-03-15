@@ -20,8 +20,31 @@ document.addEventListener('alpine:init', () => {
 
         // ---- UI State ----
         activeTab: 'backends',
+        theme: 'glass', // 'glass' or 'terminal'
         saveBanner: { show: false, type: 'success', message: '' },
         loading: false,
+
+        init() {
+            const savedTheme = localStorage.getItem('panel_theme');
+            if (savedTheme === 'terminal') {
+                this.theme = 'terminal';
+            }
+            this.applyTheme();
+        },
+
+        toggleTheme() {
+            this.theme = this.theme === 'glass' ? 'terminal' : 'glass';
+            localStorage.setItem('panel_theme', this.theme);
+            this.applyTheme();
+        },
+
+        applyTheme() {
+            if (this.theme === 'terminal') {
+                document.body.classList.add('theme-terminal');
+            } else {
+                document.body.classList.remove('theme-terminal');
+            }
+        },
 
         // ---- Backend Data ----
         backends: [],

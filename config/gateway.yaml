@@ -128,14 +128,14 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-pro-high
     fallback_on:
-    - unavailable
-    - connection_error
+    - 504
     - 429
     - 403
     - 500
     - 502
     - 503
-    - 504
+    - connection_error
+    - unavailable
     - timeout
   claude-opus-4.5:
     enabled: true
@@ -157,14 +157,14 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-flash
     fallback_on:
-    - unavailable
-    - connection_error
+    - 504
     - 429
     - 403
     - 500
     - 502
     - 503
-    - 504
+    - connection_error
+    - unavailable
     - timeout
   claude-opus-4-5:
     enabled: true
@@ -186,14 +186,14 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-pro-high
     fallback_on:
-    - unavailable
-    - connection_error
+    - 504
     - 429
     - 403
     - 500
     - 502
     - 503
-    - 504
+    - connection_error
+    - unavailable
     - timeout
   claude-opus-4.6:
     enabled: true
@@ -231,8 +231,7 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-flash
     fallback_on:
-    - unavailable
-    - connection_error
+    - 504
     - 429
     - 400
     - 403
@@ -240,7 +239,8 @@ model_routing:
     - 404
     - 502
     - 503
-    - 504
+    - connection_error
+    - unavailable
     - timeout
   claude-opus-4-6:
     enabled: true
@@ -278,8 +278,7 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-pro-high
     fallback_on:
-    - unavailable
-    - connection_error
+    - 504
     - 429
     - 400
     - 403
@@ -287,7 +286,8 @@ model_routing:
     - 404
     - 502
     - 503
-    - 504
+    - connection_error
+    - unavailable
     - timeout
   claude-sonnet-4.6:
     enabled: true
@@ -309,14 +309,14 @@ model_routing:
     - backend: copilot
       model: claude-sonnet-4.5
     fallback_on:
-    - unavailable
-    - connection_error
+    - 504
     - 429
     - 403
     - 500
     - 502
     - 503
-    - 504
+    - connection_error
+    - unavailable
     - timeout
   claude-sonnet-4-6:
     enabled: true
@@ -338,14 +338,14 @@ model_routing:
     - backend: copilot
       model: claude-sonnet-4-5
     fallback_on:
-    - unavailable
-    - connection_error
+    - 504
     - 429
     - 403
     - 500
     - 502
     - 503
-    - 504
+    - connection_error
+    - unavailable
     - timeout
   gemini-3-flash:
     enabled: true
@@ -357,14 +357,14 @@ model_routing:
     - backend: antigravity-tools
       model: gemini-3-flash
     fallback_on:
-    - unavailable
-    - connection_error
+    - 504
     - 429
     - 403
     - 500
     - 502
     - 503
-    - 504
+    - connection_error
+    - unavailable
     - timeout
   gemini-3.1-pro:
     enabled: true
@@ -374,13 +374,13 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3.1-pro
     fallback_on:
-    - unavailable
-    - connection_error
     - 429
     - 403
     - 500
     - 502
     - 503
+    - connection_error
+    - unavailable
     - timeout
   gemini-3.1-pro-high:
     enabled: true
@@ -390,13 +390,13 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3.1-pro-high
     fallback_on:
-    - unavailable
-    - connection_error
     - 429
     - 403
     - 500
     - 502
     - 503
+    - connection_error
+    - unavailable
     - timeout
   gemini-3.1-pro-low:
     enabled: true
@@ -406,13 +406,13 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3.1-pro-low
     fallback_on:
-    - unavailable
-    - connection_error
     - 429
     - 403
     - 500
     - 502
     - 503
+    - connection_error
+    - unavailable
     - timeout
   claude-haiku-4.5:
     enabled: true
@@ -426,13 +426,13 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-flash
     fallback_on:
-    - unavailable
-    - connection_error
+    - 504
     - 429
     - 500
     - 502
     - 503
-    - 504
+    - connection_error
+    - unavailable
     - timeout
 backend_capabilities:
   zerogravity:

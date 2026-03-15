@@ -34,7 +34,7 @@ from .routing import (
     _is_model_supported_by_backend,  # [FIX 2026-03-10] capability filtering for fallback chain
 )
 # [DEPRECATED] is_antigravity_supported / is_kiro_gateway_supported no longer called by proxy.py (Phase B-2)
-from .config_loader import is_backend_capable, get_cross_model_fallback, get_final_fallback
+from .config_loader import is_backend_capable, get_cross_model_fallback, get_final_fallback, get_default_routing_rule, get_catch_all_routing
 from .health import get_backend_health_manager
 
 # [REFACTOR 2026-02-14] Public station module — unified header/body/fallback handling
@@ -4370,9 +4370,97 @@ async def _route_request_with_fallback_impl(
             log.warning(f"[GATEWAY] ⚠️ model_routing chain for {model} is empty after filtering!", tag="GATEWAY")
             log.warning(f"[GATEWAY] ⚠️ Will fallback to default priority order (antigravity priority=1, kiro-gateway priority=2)", tag="GATEWAY")
     
-    # 如果没有配置的降级链，使用默认优先级顺序
+    # [FIX 2026-03-14] CRITICAL-1: Respect default_routing / catch_all chains from gateway.yaml
+    # Three-step fallback: default_routing → catch_all → global priority sort
+    # Track which rule built the chain for fallback_on determination (fixes C1 + I2 from code review)
+    _chain_source_rule = None  # Will hold the DefaultRoutingRule that built the chain
+
+    # Step 2: Try default_routing chain (pattern-based rules from gateway.yaml)
+    if not backend_chain and model:
+        default_rule = get_default_routing_rule(model)
+        if default_rule and default_rule.chain:
+            log.info(
+                f"[GATEWAY] Found default_routing rule for {model} "
+                f"(pattern={default_rule.pattern}), building chain",
+                tag="GATEWAY"
+            )
+            backend_chain = []
+            _dr_health_mgr = get_backend_health_manager()
+            for entry in default_rule.chain:
+                backend_key = entry.backend
+                backend_config = backends.get(backend_key, {})
+                if not backend_config or "base_url" not in backend_config:
+                    log.warning(
+                        f"[GATEWAY] ⚠️ Skipping ghost backend '{backend_key}' in default_routing",
+                        tag="GATEWAY"
+                    )
+                    continue
+                if not backend_config.get("enabled", True):
+                    continue
+                if await _dr_health_mgr.is_frozen(backend_key):
+                    remaining = await _dr_health_mgr.get_freeze_remaining(backend_key)
+                    log.info(
+                        f"[GATEWAY] ❄️ Pre-filtering frozen backend {backend_key} "
+                        f"from default_routing chain (remaining: {remaining:.1f}s)",
+                        tag="GATEWAY"
+                    )
+                    continue
+                if not _is_model_supported_by_backend(backend_key, model):
+                    log.debug(
+                        f"[GATEWAY] Skipping {backend_key} in default_routing: "
+                        f"model {model} not supported",
+                        tag="GATEWAY"
+                    )
+                    continue
+                backend_chain.append((backend_key, backend_config, model))
+
+            if backend_chain:
+                chain_path = " → ".join([b[0] for b in backend_chain])
+                log.info(
+                    f"[GATEWAY] ✅ Using default_routing chain for {model}: {chain_path}",
+                    tag="GATEWAY"
+                )
+                _chain_source_rule = default_rule  # Track source for fallback_on
+            else:
+                log.warning(
+                    f"[GATEWAY] ⚠️ default_routing chain for {model} is empty after filtering",
+                    tag="GATEWAY"
+                )
+                backend_chain = None  # Reset to trigger next step
+
+    # Step 2b: Try catch_all chain
+    if not backend_chain and model:
+        catch_all = get_catch_all_routing()
+        if catch_all and catch_all.chain:
+            log.info(f"[GATEWAY] Trying catch_all routing chain for {model}", tag="GATEWAY")
+            backend_chain = []
+            _ca_health_mgr = get_backend_health_manager()
+            for entry in catch_all.chain:
+                backend_key = entry.backend
+                backend_config = backends.get(backend_key, {})
+                if not backend_config or "base_url" not in backend_config:
+                    continue
+                if not backend_config.get("enabled", True):
+                    continue
+                if await _ca_health_mgr.is_frozen(backend_key):
+                    continue
+                if not _is_model_supported_by_backend(backend_key, model):
+                    continue
+                backend_chain.append((backend_key, backend_config, model))
+
+            if backend_chain:
+                chain_path = " → ".join([b[0] for b in backend_chain])
+                log.info(
+                    f"[GATEWAY] ✅ Using catch_all chain for {model}: {chain_path}",
+                    tag="GATEWAY"
+                )
+                _chain_source_rule = catch_all  # Track source for fallback_on
+            else:
+                backend_chain = None  # Reset to trigger next step
+
+    # Step 3: Final fallback — global priority sort (existing logic)
     if not backend_chain:
-        log.info(f"[GATEWAY] No model_routing chain for {model}, using default priority order", tag="GATEWAY")
+        log.info(f"[GATEWAY] No routing chain found for {model}, using global priority order", tag="GATEWAY")
         specified_backend = get_backend_for_model(model) if model else None
         sorted_backends = get_sorted_backends()
 
@@ -4404,7 +4492,18 @@ async def _route_request_with_fallback_impl(
             log.warning(f"[GATEWAY] No backend claims support for {model}, trying all", tag="GATEWAY")
 
     last_error = None
-    
+
+    # [FIX 2026-03-16] CRITICAL-2 + C1 fix: Determine active fallback_on from the ACTUAL chain source
+    # Uses _chain_source_rule tracked during chain building to avoid re-querying and to cover catch_all.
+    # If fallback_on is empty/not configured, all errors trigger fallback (backward compatible).
+    active_fallback_on = set()
+    if routing_rule and routing_rule.enabled and routing_rule.fallback_on:
+        active_fallback_on = routing_rule.fallback_on
+        log.debug(f"[GATEWAY] Using model_routing fallback_on: {active_fallback_on}", tag="GATEWAY")
+    elif _chain_source_rule is not None and hasattr(_chain_source_rule, 'fallback_on') and _chain_source_rule.fallback_on:
+        active_fallback_on = _chain_source_rule.fallback_on
+        log.debug(f"[GATEWAY] Using chain_source fallback_on: {active_fallback_on}", tag="GATEWAY")
+
     # [FIX 2026-01-23] 获取模型名称（用于限流跟踪）
     model_name = body.get("model") if isinstance(body, dict) else model
     
@@ -4515,28 +4614,48 @@ async def _route_request_with_fallback_impl(
 
         await health_mgr.record_failure(backend_key)
         last_error = result
-        
-        # ✅ [FIX 2026-01-22] 如果使用 model_routing，检查是否应该降级
-        if routing_rule and routing_rule.enabled:
-            # 从错误中提取状态码
-            status_code = None
-            error_type = None
-            if isinstance(result, str):
-                # 尝试从错误消息中提取状态码
-                import re
-                match = re.search(r'(\d{3})', result)
-                if match:
-                    status_code = int(match.group(1))
-                if "timeout" in result.lower():
-                    error_type = "timeout"
-                elif "connection" in result.lower():
-                    error_type = "connection_error"
-            
-            # 检查是否应该继续降级
-            if not routing_rule.should_fallback(status_code, error_type):
-                log.debug(f"[GATEWAY] Backend {backend_config.get('name', backend_key)} failed but no fallback condition met (status={status_code}, error={error_type})", tag="GATEWAY")
-                # 继续尝试下一个后端（即使不符合降级条件）
-        
+
+        # [FIX 2026-03-16] I1 fix: Tighten regex to avoid matching non-HTTP numbers
+        # (e.g., IP octets like "192", timeouts like "300 seconds")
+        # Priority: "status 429" > "HTTP/1.1 503" > leading 3-digit code > fallback any 3-digit
+        _fb_status_code = None
+        _fb_error_type = None
+        if isinstance(result, str):
+            _fb_match = re.search(
+                r'(?:status[_\s]*(?:code)?[:\s=]*(\d{3}))'   # "status_code=429", "status: 503"
+                r'|(?:HTTP/\d\.\d\s+(\d{3}))'                # "HTTP/1.1 429"
+                r'|(?:^(\d{3})\b)',                           # leading "429 Too Many Requests"
+                result, re.IGNORECASE
+            )
+            if _fb_match:
+                _fb_status_code = int(next(g for g in _fb_match.groups() if g is not None))
+            if "timeout" in result.lower():
+                _fb_error_type = "timeout"
+            elif "connection" in result.lower():
+                _fb_error_type = "connection_error"
+
+        # Check if this error type warrants fallback to next backend
+        if active_fallback_on:
+            # fallback_on is configured — only continue if error matches
+            should_continue = (
+                (_fb_status_code is not None and _fb_status_code in active_fallback_on) or
+                (_fb_error_type is not None and _fb_error_type in active_fallback_on)
+            )
+            if not should_continue:
+                log.warning(
+                    f"[GATEWAY] ⛔ Error {_fb_status_code}/{_fb_error_type} not in "
+                    f"fallback_on={active_fallback_on}, stopping chain for {backend_config.get('name', backend_key)}",
+                    tag="GATEWAY"
+                )
+                break  # Don't try next backend — error type not in fallback_on
+            else:
+                log.info(
+                    f"[GATEWAY] Error {_fb_status_code}/{_fb_error_type} matches "
+                    f"fallback_on, continuing to next backend",
+                    tag="GATEWAY"
+                )
+        # else: no fallback_on configured, try all backends (backward compatible)
+
         log.warning(f"Backend {backend_config.get('name', backend_key)} failed: {result}, trying next...", tag="GATEWAY")
 
     # ==================== [REFACTOR 2026-02-21] Phase B-3: YAML-driven cross-model fallback ====================

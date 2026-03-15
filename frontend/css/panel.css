@@ -503,3 +503,146 @@ body::before {
 /* ---- Transition Helpers ---- */
 .fade-enter { opacity: 0; transform: translateY(4px); }
 .fade-enter-active { transition: all 0.2s ease; }
+
+/* ============================================================
+   Terminal CLI Theme Override
+   ============================================================ */
+body.theme-terminal {
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #0a0a0a;
+    --bg-card: rgba(51, 255, 0, 0.03);
+    --bg-card-hover: rgba(51, 255, 0, 0.08);
+    --bg-input: transparent;
+    --border-subtle: #1f521f;
+    --border-glow: rgba(51, 255, 0, 0.4);
+    --text-primary: #33ff00;
+    --text-secondary: #ffb000;
+    --text-muted: #1f521f;
+    --accent-purple: #33ff00;
+    --accent-blue: #33ff00;
+    --accent-green: #33ff00;
+    --accent-yellow: #ffb000;
+    --accent-red: #ff3333;
+    --accent-orange: #ffb000;
+    --glass-bg: #0a0a0a;
+    --glass-border: #1f521f;
+    --shadow-glow: 0 0 10px rgba(51, 255, 0, 0.2);
+    
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    text-shadow: 0 0 3px rgba(51, 255, 0, 0.3);
+}
+
+body.theme-terminal::before {
+    display: none; /* Hide purple/blue/green mesh */
+}
+
+/* CRT Scanlines */
+body.theme-terminal::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+        transparent 0px,
+        rgba(0, 0, 0, 0.15) 1px,
+        transparent 2px
+    );
+    pointer-events: none;
+    z-index: 9999;
+}
+
+/* Terminal Specfic Component Overrides */
+body.theme-terminal .glass-card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-radius: 0;
+    border: 1px solid var(--border-subtle);
+    box-shadow: none;
+}
+body.theme-terminal .glass-card:hover {
+    border-color: var(--text-primary);
+}
+
+body.theme-terminal .input-field {
+    border-radius: 0;
+    border: 1px dashed var(--border-subtle);
+    color: var(--text-primary);
+}
+body.theme-terminal .input-field:focus {
+    border-style: solid;
+    border-color: var(--text-primary);
+    box-shadow: none;
+}
+
+body.theme-terminal .btn-primary {
+    background: transparent;
+    border: 1px solid var(--text-primary);
+    border-radius: 0;
+    color: var(--text-primary);
+    text-shadow: none;
+}
+body.theme-terminal .btn-primary:hover {
+    background: var(--text-primary);
+    color: #0a0a0a;
+    box-shadow: none;
+}
+body.theme-terminal .btn-primary:active {
+    transform: translateY(1px);
+}
+
+body.theme-terminal .btn-ghost {
+    border-radius: 0;
+    border: 1px dashed var(--border-subtle);
+}
+body.theme-terminal .btn-ghost:hover {
+    background: var(--text-primary);
+    color: #0a0a0a;
+    border-style: solid;
+}
+
+body.theme-terminal .tab-bar {
+    border-bottom: 1px dashed var(--border-subtle);
+}
+body.theme-terminal .tab-btn {
+    text-transform: uppercase;
+}
+body.theme-terminal .tab-btn.active {
+    border-bottom-style: dashed;
+}
+
+body.theme-terminal .status-dot {
+    border-radius: 0;
+    box-shadow: none !important;
+}
+
+body.theme-terminal .toggle .slider {
+    border-radius: 0;
+    border: 1px solid var(--text-muted);
+    background: transparent;
+}
+body.theme-terminal .toggle .slider::before {
+    border-radius: 0;
+    background: var(--text-primary);
+    width: 14px; height: 14px;
+    top: 3px; left: 3px;
+}
+body.theme-terminal .toggle input:checked + .slider {
+    background: var(--text-muted);
+}
+body.theme-terminal .toggle input:checked + .slider::before {
+    background: var(--bg-primary);
+    transform: translateX(18px);
+}
+
+body.theme-terminal .login-box h1 {
+    background: none;
+    -webkit-text-fill-color: var(--text-primary);
+    color: var(--text-primary);
+}
+
+body.theme-terminal ::-webkit-scrollbar-thumb {
+    border-radius: 0;
+    background: var(--text-muted);
+}
+body.theme-terminal ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-primary);
+}

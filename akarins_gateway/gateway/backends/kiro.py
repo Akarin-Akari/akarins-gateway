@@ -21,7 +21,8 @@ import json
 
 from .interface import GatewayBackend, BackendConfig
 from akarins_gateway.gateway.config import BACKENDS, KIRO_GATEWAY_MODELS
-from akarins_gateway.gateway.routing import is_kiro_gateway_supported, KIRO_GATEWAY_SUPPORTED_MODELS
+from akarins_gateway.gateway.routing import KIRO_GATEWAY_SUPPORTED_MODELS
+from akarins_gateway.gateway.config_loader import is_backend_capable
 from akarins_gateway.core.log import log
 from akarins_gateway.core.httpx_client import safe_close_client
 
@@ -115,7 +116,7 @@ class KiroGatewayBackend:
         """
         检查是否支持指定模型
 
-        使用 is_kiro_gateway_supported 函数进行智能匹配
+        使用 YAML backend_capabilities 配置进行匹配
 
         Args:
             model: 模型名称
@@ -123,7 +124,7 @@ class KiroGatewayBackend:
         Returns:
             是否支持
         """
-        return is_kiro_gateway_supported(model)
+        return is_backend_capable("kiro-gateway", model)
 
     async def handle_request(
         self,

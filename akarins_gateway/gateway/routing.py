@@ -91,19 +91,16 @@ __all__ = [
     "calculate_retry_delay",
     "should_retry",
     "check_backend_health",
-    "is_kiro_gateway_supported",
-    "KIRO_GATEWAY_SUPPORTED_MODELS",
-    "is_ruoli_supported",
-    "RUOLI_SUPPORTED_MODELS",
-    "is_anyrouter_supported",
-    "ANYROUTER_SUPPORTED_MODELS",
-    # [NEW 2026-02-14] newAPI 系公益站通用支持检查
-    "is_newapi_public_supported",
-    "NEWAPI_PUBLIC_SUPPORTED_MODELS",
-    # 新增：模型路由链
-    "get_backend_chain_for_model",
-    "get_fallback_backend",
-    "get_fallback_backend_and_model",  # 新增：返回后端和目标模型
+    # [DEPRECATED 2026-03-14] Legacy model support checks — kept for backward compat but no longer exported
+    # Use config_loader.is_backend_capable(backend, model) instead.
+    # "is_kiro_gateway_supported", "KIRO_GATEWAY_SUPPORTED_MODELS",
+    # "is_ruoli_supported", "RUOLI_SUPPORTED_MODELS",
+    # "is_anyrouter_supported", "ANYROUTER_SUPPORTED_MODELS",
+    # "is_newapi_public_supported", "NEWAPI_PUBLIC_SUPPORTED_MODELS",
+    # [DEPRECATED 2026-03-14] Dead code — proxy.py builds chains directly, does not use these
+    # "get_backend_chain_for_model",
+    # "get_fallback_backend",
+    # "get_fallback_backend_and_model",
     "sanitize_model_params",  # 新增：清理模型参数
     # [FIX 2026-03-10] Export for proxy.py capability filtering
     "_is_model_supported_by_backend",
@@ -660,10 +657,11 @@ def is_anyrouter_supported(model: str) -> bool:
 
 def get_backend_chain_for_model(model: str) -> List[str]:
     """
-    获取模型的后端优先级链
+    [DEPRECATED - DEAD CODE] 获取模型的后端优先级链
 
-    如果模型配置了特定路由规则，返回配置的后端链；
-    否则返回默认的单后端列表。
+    ⚠️ proxy.py 使用自己的链构建逻辑（model_routing → default_routing → catch_all → global priority），
+    不再调用此函数。保留仅为向后兼容，将在未来版本删除。
+    请使用 proxy.py 的 route_request_with_fallback() 中的链构建逻辑。
 
     Args:
         model: 模型名称
@@ -701,9 +699,10 @@ def get_fallback_backend(
     visited_backends: Optional[set] = None  # ✅ [FIX 2026-01-22] 防止循环降级
 ) -> Optional[str]:
     """
-    获取降级后端
+    [DEPRECATED - DEAD CODE] 获取降级后端
 
-    当当前后端请求失败时，根据配置的降级条件返回下一个后端。
+    ⚠️ proxy.py 在 for 循环中直接迭代 backend_chain 并使用 active_fallback_on 控制降级，
+    不再调用此函数。保留仅为向后兼容，将在未来版本删除。
 
     Args:
         model: 模型名称
@@ -805,10 +804,10 @@ def get_fallback_backend_and_model(
     visited_backends: Optional[set] = None  # ✅ [FIX 2026-01-22] 防止循环降级
 ) -> Optional[Tuple[str, str]]:
     """
-    获取降级后端和目标模型
+    [DEPRECATED - DEAD CODE] 获取降级后端和目标模型
 
-    当当前后端请求失败时，根据配置的降级条件返回下一个后端和目标模型。
-    支持模型级别的降级，如 claude-sonnet-4.5 -> gemini-3-pro。
+    ⚠️ proxy.py 在 for 循环中直接迭代 backend_chain 并使用 active_fallback_on 控制降级，
+    不再调用此函数。保留仅为向后兼容，将在未来版本删除。
 
     Args:
         model: 原始请求的模型名称

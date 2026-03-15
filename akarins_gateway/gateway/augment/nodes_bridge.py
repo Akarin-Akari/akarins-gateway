@@ -42,10 +42,10 @@ except ImportError:
 
 # 延迟导入 Kiro Gateway 检测和配置
 try:
-    from akarins_gateway.gateway.routing import is_kiro_gateway_supported
+    from akarins_gateway.gateway.config_loader import is_backend_capable
     from akarins_gateway.gateway.config import BACKENDS
 except ImportError:
-    is_kiro_gateway_supported = None
+    is_backend_capable = None
     BACKENDS = {}
 
 # 延迟导入上下文截断（可选）
@@ -546,9 +546,9 @@ async def stream_openai_with_nodes_bridge(
 
     # [FIX 2026-01-23] Kiro Compact 兼容层：对 Augment → Kiro 的请求应用紧凑格式
     # 这确保工具后的 continuation 请求对 Kiro 更友好，减少 502 错误
-    if is_kiro_gateway_supported and BACKENDS:
+    if is_backend_capable and BACKENDS:
         try:
-            if is_kiro_gateway_supported(model) and BACKENDS.get("kiro-gateway", {}).get("enabled", True):
+            if is_backend_capable("kiro-gateway", model) and BACKENDS.get("kiro-gateway", {}).get("enabled", True):
                 request_body = _prepare_kiro_compact_body(request_body)
                 log.info(
                     f"[KIRO_COMPACT] Applied compact format for Augment → Kiro (model={model})",

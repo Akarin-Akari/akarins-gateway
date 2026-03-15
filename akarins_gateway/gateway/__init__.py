@@ -42,13 +42,6 @@ if TYPE_CHECKING:
         get_rate_limit_tracker,
         parse_rate_limit_from_response,
     )
-    from .rate_limit_handler import (
-        RateLimitTracker,
-        RateLimitReason,
-        RateLimitInfo,
-        get_rate_limit_tracker,
-        parse_rate_limit_from_response,
-    )
 
 __all__ = [
     # 配置
@@ -61,7 +54,8 @@ __all__ = [
     "get_backend_and_model_for_routing",  # 新增：返回后端和目标模型
     "get_sorted_backends",
     "sanitize_model_params",  # 新增：清理模型参数
-    "get_fallback_backend_and_model",  # 新增：返回后端和目标模型的降级函数
+    # [DEPRECATED 2026-03-14] Dead code — proxy.py builds chains directly
+    # "get_fallback_backend_and_model",
     # 代理
     "proxy_request_to_backend",
     "route_request_with_fallback",

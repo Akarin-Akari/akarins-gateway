@@ -27,8 +27,7 @@
     <script src="/panel/static/js/panel.js"></script>
 </head>
 
-<body x-data x-init="$store.panel.tryRestoreSession()">
-
+<body x-data :class="{ 'theme-terminal': $store.panel.theme === 'terminal' }" x-init="$store.panel.tryRestoreSession()">
 <!-- ==================== LOGIN PAGE ==================== -->
 <template x-if="!$store.panel.authenticated">
 <div class="login-container">
@@ -74,6 +73,14 @@
             <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;" x-text="$store.i18n.t('header.subtitle')"></p>
         </div>
         <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <!-- Theme Switcher -->
+            <button class="btn-ghost" style="padding: 4px; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; font-size: 1rem;"
+                    @click="$store.panel.toggleTheme()"
+                    :title="$store.panel.theme === 'glass' ? 'Switch to Terminal Theme' : 'Switch to Glass Theme'">
+                <span x-show="$store.panel.theme === 'glass'">💻</span>
+                <span x-show="$store.panel.theme === 'terminal'">✨</span>
+            </button>
+
             <!-- Language Switcher -->
             <div style="display: flex; gap: 2px; background: var(--bg-input); border-radius: 6px; padding: 2px; border: 1px solid var(--border-subtle);">
                 <button style="padding: 2px 8px; font-size: 0.7rem; border: none; border-radius: 4px; cursor: pointer; transition: all 0.2s;"
