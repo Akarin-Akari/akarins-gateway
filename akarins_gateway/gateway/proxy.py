@@ -2027,10 +2027,9 @@ async def proxy_request_to_backend(
                 status_code = getattr(resp, "status_code", 200)
                 if stream:
                     if status_code >= 400:
-                        async def error_stream():
-                            error_msg = json.dumps({"error": "Backend error", "status": status_code})
-                            yield f"data: {error_msg}\n\n"
-                        return True, error_stream()
+                        # [FIX 2026-03-16] Codex #6: Return False so gateway tries next backend
+                        # Error stream was incorrectly returned as (True, ...) which prevented fallback
+                        return False, f"Backend error: {status_code}"
 
                     if isinstance(resp, StarletteStreamingResponse):
                         return True, resp.body_iterator
@@ -2058,22 +2057,12 @@ async def proxy_request_to_backend(
 
             except HTTPException as e:
                 if stream:
-                    status = int(getattr(e, "status_code", 500))
-
-                    async def error_stream(status_code: int = status):
-                        error_msg = json.dumps({"error": "Backend error", "status": status_code})
-                        yield f"data: {error_msg}\n\n"
-                    return True, error_stream()
+                    # [FIX 2026-03-16] Codex #6: Return False so gateway tries next backend
+                    return False, f"Backend error: {getattr(e, 'status_code', 500)}"
                 return False, f"Backend error: {e.status_code}"
             except Exception as e:
                 log.error(f"Local antigravity service call failed: {e}", tag="GATEWAY")
-                if stream:
-                    msg = str(e)
-
-                    async def error_stream(error_message: str = msg):
-                        error_msg = json.dumps({"error": error_message})
-                        yield f"data: {error_msg}\n\n"
-                    return True, error_stream()
+                # [FIX 2026-03-16] Codex #6: Return False so gateway tries next backend
                 return False, str(e)
 
     # 保留调用方传入的原始 endpoint，后续即使被重写也能基于原始端点做判断
@@ -4604,16 +4593,16 @@ async def _route_request_with_fallback_impl(
             backends=backends,
         )
 
-        # [FIX 2026-01-21] 记录后端健康状态
-        health_mgr = get_backend_health_manager()
+        # [FIX 2026-01-21] 健康状态记录
+        # [FIX 2026-03-16] Codex #5: Removed duplicate record_success/record_failure here.
+        # proxy_request_to_backend() already records health with granular error codes internally.
+        # Double-recording inflated consecutive_failures, causing premature freezing/circuit-breaking.
 
         if success:
-            await health_mgr.record_success(backend_key)
             if hasattr(log, 'success'):
                 log.success(f"Request succeeded via {backend_config.get('name', backend_key)}", tag="GATEWAY")
             return result
 
-        await health_mgr.record_failure(backend_key)
         last_error = result
 
         # [FIX 2026-03-16] I1 fix: Tighten regex to avoid matching non-HTTP numbers
