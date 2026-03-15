@@ -446,7 +446,12 @@ async def update_routing(
     )
 
     # Update both caches
-    if _model_routing_cache is not None:
+    # [FIX 2026-03-16] Codex #10: Initialize cache on cold-start so Panel writes always take effect
+    if _model_routing_cache is None:
+        from akarins_gateway.gateway import config_loader as _cl
+        _cl._model_routing_cache = {}
+        _cl._model_routing_cache[model_lower] = new_rule
+    else:
         _model_routing_cache[model_lower] = new_rule
     MODEL_ROUTING[model_lower] = new_rule
 

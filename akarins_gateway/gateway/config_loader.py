@@ -986,13 +986,18 @@ def load_default_routing(config_path: str = None) -> Tuple[List[DefaultRoutingRu
         return tuple(chain)
 
     def _parse_fallback_on(fallback_data: list) -> frozenset:
-        """解析降级条件"""
+        """解析降级条件 — 归一化 int/str 类型"""
+        # [FIX 2026-03-16] Codex #1: Normalize int/str to avoid "429" vs 429 mismatch
         result = set()
         for item in (fallback_data or []):
             if isinstance(item, int):
                 result.add(item)
             elif isinstance(item, str):
-                result.add(item)
+                stripped = item.strip()
+                try:
+                    result.add(int(stripped))
+                except ValueError:
+                    result.add(stripped.lower())
         return frozenset(result)
 
     # 解析 rules

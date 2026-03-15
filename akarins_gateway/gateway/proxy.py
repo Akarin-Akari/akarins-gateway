@@ -4492,6 +4492,7 @@ async def _route_request_with_fallback_impl(
             log.warning(f"[GATEWAY] No backend claims support for {model}, trying all", tag="GATEWAY")
 
     last_error = None
+    stopped_by_fallback_on = False  # [FIX 2026-03-16] Codex #3: Track if chain was stopped by fallback_on policy
 
     # [FIX 2026-03-16] CRITICAL-2 + C1 fix: Determine active fallback_on from the ACTUAL chain source
     # Uses _chain_source_rule tracked during chain building to avoid re-querying and to cover catch_all.
@@ -4647,6 +4648,7 @@ async def _route_request_with_fallback_impl(
                     f"fallback_on={active_fallback_on}, stopping chain for {backend_config.get('name', backend_key)}",
                     tag="GATEWAY"
                 )
+                stopped_by_fallback_on = True  # [FIX 2026-03-16] Codex #3: prevent cross-model fallback
                 break  # Don't try next backend — error type not in fallback_on
             else:
                 log.info(
@@ -4660,7 +4662,8 @@ async def _route_request_with_fallback_impl(
 
     # ==================== [REFACTOR 2026-02-21] Phase B-3: YAML-driven cross-model fallback ====================
     # 跨模型降级：所有后端失败后，根据 YAML cross_model_fallback 规则降级到其他模型
-    if enable_cross_pool_fallback:
+    # [FIX 2026-03-16] Codex #3: Skip cross-model fallback if chain was stopped by fallback_on policy
+    if enable_cross_pool_fallback and not stopped_by_fallback_on:
         fallback_rule = get_cross_model_fallback(model or "")
         if fallback_rule:
             fb_backend_key = fallback_rule.backend
