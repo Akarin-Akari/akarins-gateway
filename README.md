@@ -8,9 +8,11 @@ A high-performance, data-driven API gateway that unifies multiple AI backend pro
 
 A built-in web-based management panel for configuring backends, model routing, and monitoring health status in real time.
 
-| Backends | Model Routing | Health Monitor |
-|:--------:|:-------------:|:--------------:|
-| ![Backends Panel](docs/screenshots/panel-backends.png) | ![Model Routing Panel](docs/screenshots/panel-model-routing.png) | ![Health Monitor Panel](docs/screenshots/panel-health-monitor.png) |
+![Backends Panel](docs/screenshots/panel-backends.png)
+
+| Model Routing | Health Monitor |
+|:-------------:|:--------------:|
+| ![Model Routing Panel](docs/screenshots/panel-model-routing.png) | ![Health Monitor Panel](docs/screenshots/panel-health-monitor.png) |
 
 ## Features
 
