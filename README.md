@@ -4,6 +4,14 @@
 
 A high-performance, data-driven API gateway that unifies multiple AI backend providers behind an **OpenAI-compatible** interface. Route requests across 7+ backends with automatic fallback, circuit breaking, and IDE-aware optimizations — all configured through a single YAML file.
 
+## Management Panel
+
+A built-in web-based management panel for configuring backends, model routing, and monitoring health status in real time.
+
+| Backends | Model Routing | Health Monitor |
+|:--------:|:-------------:|:--------------:|
+| ![Backends Panel](docs/screenshots/panel-backends.png) | ![Model Routing Panel](docs/screenshots/panel-model-routing.png) | ![Health Monitor Panel](docs/screenshots/panel-health-monitor.png) |
+
 ## Features
 
 ### Multi-Backend Routing

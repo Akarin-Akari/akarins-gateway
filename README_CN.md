@@ -4,6 +4,14 @@
 
 高性能、数据驱动的 API 网关，将多个 AI 后端供应商统一在 **OpenAI 兼容**接口之后。通过单一 YAML 文件配置，实现跨 7+ 后端的请求路由、自动降级、熔断保护和 IDE 感知优化。
 
+## 管理面板
+
+内置基于 Web 的管理面板，可实时配置后端、模型路由，并监控健康状态。
+
+| 后端管理 | 模型路由 | 健康监控 |
+|:--------:|:--------:|:--------:|
+| ![后端管理面板](docs/screenshots/panel-backends.png) | ![模型路由面板](docs/screenshots/panel-model-routing.png) | ![健康监控面板](docs/screenshots/panel-health-monitor.png) |
+
 ## 特性
 
 ### 多后端路由
