@@ -226,7 +226,18 @@
 
                             <!-- Supported Models -->
                             <div>
-                                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" x-text="$store.i18n.t('backends.supported_models')"></label>
+                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                                    <label style="font-size: 0.75rem; color: var(--text-muted);" x-text="$store.i18n.t('backends.supported_models')"></label>
+                                    <button class="btn-ghost" style="font-size: 0.65rem; padding: 0.15rem 0.5rem;"
+                                            @click="$store.panel.fetchBackendModels(b.key)"
+                                            :disabled="$store.panel.fetchingModels[b.key]">
+                                        <span x-show="!$store.panel.fetchingModels[b.key]" x-text="$store.i18n.t('backends.fetch_models')"></span>
+                                        <span x-show="$store.panel.fetchingModels[b.key]" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                                            <span class="spin" style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
+                                            <span x-text="$store.i18n.t('backends.fetching')"></span>
+                                        </span>
+                                    </button>
+                                </div>
                                 <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
                                     <template x-for="m in b.supported_models" :key="m">
                                         <span style="font-size: 0.7rem; padding: 0.15rem 0.4rem; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--text-secondary);"
@@ -815,10 +826,14 @@
 
     <!-- ==================== TAB 4: CLIENT SETTINGS ==================== -->
     <div x-show="$store.panel.activeTab === 'clients'" x-cloak>
-        <div style="margin-bottom: 1rem;">
-            <p style="color: var(--text-muted); font-size: 0.8rem;"
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;"
                x-text="$store.i18n.t('clients.desc')">
             </p>
+            <button class="btn-ghost btn-danger" style="font-size: 0.75rem; white-space: nowrap; padding: 0.35rem 0.75rem;"
+                    @click="$store.panel.resetClientDefaults()"
+                    x-text="'⚙️ ' + $store.i18n.t('clients.reset_defaults')">
+            </button>
         </div>
 
         <!-- Feature Legend -->

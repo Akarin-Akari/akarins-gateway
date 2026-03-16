@@ -161,6 +161,15 @@ def _update_yaml_backends(yaml_backends: dict, backends: Dict[str, Dict[str, Any
         if "max_retries" in config:
             backend_node["max_retries"] = config["max_retries"]
 
+        # [FIX 2026-03-17] Update API keys (support both list and single-key formats)
+        if "api_keys" in config and config["api_keys"]:
+            backend_node["api_keys"] = list(config["api_keys"])
+            # Remove legacy single-key field to avoid ambiguity
+            if "api_key" in backend_node:
+                del backend_node["api_key"]
+        elif "api_key" in config and config["api_key"]:
+            backend_node["api_key"] = config["api_key"]
+
 
 def _update_yaml_model_routing(yaml_data: dict, model_routing: Dict[str, Any]) -> None:
     """

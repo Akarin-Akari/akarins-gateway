@@ -371,6 +371,103 @@ async def reset_circuit_breaker(
     return {"backend": backend_key, "circuit_breaker": cb.get_status()}
 
 
+# [NEW 2026-03-17] Fetch models from a backend's /models endpoint
+@router.post("/backends/{backend_key}/fetch-models")
+async def fetch_backend_models(
+    backend_key: str,
+    _token: str = Depends(verify_panel_token),
+):
+    """
+    Fetch the real model list from a backend's /models endpoint.
+    Updates supported_models in-memory and returns the model list.
+    """
+    if backend_key not in BACKENDS:
+        raise HTTPException(status_code=404, detail=f"Backend '{backend_key}' not found")
+
+    config = BACKENDS[backend_key]
+    if not config.get("enabled", True):
+        raise HTTPException(status_code=400, detail=f"Backend '{backend_key}' is disabled")
+
+    # Get base_url
+    from akarins_gateway.gateway.routing import get_backend_base_url
+    base_url = get_backend_base_url(config)
+    if not base_url:
+        raise HTTPException(status_code=400, detail=f"Backend '{backend_key}' has no base_url")
+
+    # Skip anthropic-format backends — they don't have /models
+    if config.get("api_format") == "anthropic":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Backend '{backend_key}' uses anthropic format (no /models endpoint)",
+        )
+
+    # Build auth headers
+    api_key = config.get("api_key") or ""
+    if not api_key:
+        api_keys = config.get("api_keys")
+        if api_keys and isinstance(api_keys, list) and len(api_keys) > 0:
+            api_key = api_keys[0]
+    if not api_key:
+        api_key = "dummy"
+
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    try:
+        from akarins_gateway.core.httpx_client import http_client
+
+        async with http_client.get_client(timeout=15.0) as client:
+            response = await client.get(f"{base_url}/models", headers=headers)
+
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Backend returned HTTP {response.status_code}",
+                )
+
+            data = response.json()
+            model_ids = []
+
+            for item in data.get("data", []):
+                if isinstance(item, dict):
+                    model_id = item.get("id")
+                    if model_id and isinstance(model_id, str):
+                        model_ids.append(model_id)
+                elif isinstance(item, str) and item:
+                    model_ids.append(item)
+
+            if not model_ids:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Backend returned empty model list",
+                )
+
+            # Sort for consistent display
+            model_ids = sorted(set(model_ids))
+
+            # Update in-memory config
+            config["supported_models"] = model_ids
+            config["models"] = model_ids
+
+            log.info(
+                f"[PANEL] Fetched {len(model_ids)} models from '{backend_key}'"
+            )
+
+            return {
+                "backend": backend_key,
+                "models": model_ids,
+                "count": len(model_ids),
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning(f"[PANEL] Failed to fetch models from '{backend_key}': {e}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to connect to backend: {e}",
+        )
+
+
 # ==================== Model Routing API ====================
 
 @router.get("/routing")
@@ -619,6 +716,20 @@ async def update_client_feature(
         "client": client_type,
         "feature": req.feature,
         "enabled": req.enabled,
+    }
+
+
+# [NEW 2026-03-17] Reset client settings to defaults
+@router.post("/clients/reset-defaults")
+async def reset_client_defaults(_token: str = Depends(verify_panel_token)):
+    """Reset all client feature settings to their initial defaults."""
+    from akarins_gateway.ide_compat.client_detector import ClientTypeDetector
+
+    ClientTypeDetector.reset_to_defaults()
+    log.info("[PANEL] Client settings reset to defaults")
+    return {
+        "clients": ClientTypeDetector.get_all_client_settings(),
+        "message": "All client settings restored to defaults",
     }
 
 

@@ -147,6 +147,40 @@ class ClientTypeDetector:
         "scid": "SCID_ENABLED_CLIENTS",
     }
 
+    # [NEW 2026-03-17] Snapshot of initial defaults for "Restore Defaults" feature
+    _DEFAULTS = {
+        "SANITIZATION_REQUIRED": {
+            ClientType.CURSOR, ClientType.AUGMENT, ClientType.WINDSURF,
+            ClientType.CLINE, ClientType.CONTINUE_DEV, ClientType.AIDER,
+            ClientType.ZED, ClientType.COPILOT, ClientType.UNKNOWN,
+        },
+        "CROSS_POOL_FALLBACK_ENABLED": {
+            ClientType.CLAUDE_CODE, ClientType.CLINE,
+            ClientType.CONTINUE_DEV, ClientType.AIDER, ClientType.OPENAI_API,
+        },
+        "STATELESS_CLIENTS": {
+            ClientType.CLINE, ClientType.AIDER,
+            ClientType.CONTINUE_DEV, ClientType.OPENAI_API,
+        },
+        "SIGNATURE_RECOVERY_ONLY_CLIENTS": {
+            ClientType.CLAUDE_CODE,
+        },
+        "SCID_ENABLED_CLIENTS": {
+            ClientType.CURSOR, ClientType.AUGMENT, ClientType.WINDSURF,
+            ClientType.ZED, ClientType.COPILOT,
+        },
+    }
+
+    @classmethod
+    def reset_to_defaults(cls) -> None:
+        """
+        Restore all client feature sets to their initial defaults.
+        Called by Panel API "Restore Default Settings" button.
+        """
+        for attr_name, default_set in cls._DEFAULTS.items():
+            setattr(cls, attr_name, set(default_set))
+        log.info("[CLIENT_DETECTOR] All client settings reset to defaults")
+
     @classmethod
     def get_all_client_settings(cls) -> Dict[str, Dict[str, bool]]:
         """

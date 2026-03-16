@@ -264,6 +264,15 @@ def _apply_yaml_overrides() -> None:
             yaml_url = yaml_cfg.get("base_url", "")
             if yaml_url and isinstance(yaml_url, str) and not yaml_url.startswith("${"):
                 target["base_url"] = yaml_url
+
+            # [FIX 2026-03-17] api_keys / api_key: load from YAML if present
+            if "api_keys" in yaml_cfg and yaml_cfg["api_keys"]:
+                target["api_keys"] = list(yaml_cfg["api_keys"])
+            elif "api_key" in yaml_cfg and yaml_cfg["api_key"]:
+                from akarins_gateway.gateway.config_loader import expand_env_vars
+                expanded_key = expand_env_vars(yaml_cfg["api_key"])
+                if expanded_key and not str(expanded_key).startswith("${"):
+                    target["api_key"] = expanded_key
         else:
             # New backend from YAML (panel-added) — create entry
             from akarins_gateway.gateway.config_loader import expand_env_vars

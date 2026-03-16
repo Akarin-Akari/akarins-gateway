@@ -1,7 +1,7 @@
 backends:
   zerogravity:
     enabled: false
-    priority: 3
+    priority: 4
     base_url: ${ZEROGRAVITY_BASE_URL:http://127.0.0.1:8880/v1}
     api_format: openai
     models:
@@ -18,7 +18,7 @@ backends:
     max_retries: 2
   gcli2api-antigravity:
     enabled: false
-    priority: 4
+    priority: 5
     base_url: ${ANTIGRAVITY_BASE_URL:http://127.0.0.1:7862/antigravity/v1}
     models:
     - '*'
@@ -27,7 +27,7 @@ backends:
     max_retries: 2
   antigravity-tools:
     enabled: false
-    priority: 5
+    priority: 6
     base_url: ${ANTIGRAVITY_TOOLS_BASE_URL:http://127.0.0.1:9046/v1}
     api_format: anthropic
     endpoint_suffix: ?beta=true
@@ -49,7 +49,7 @@ backends:
     max_retries: 2
   copilot:
     enabled: true
-    priority: 2
+    priority: 3
     base_url: http://127.0.0.1:8141/v1
     models:
     - gpt-4
@@ -83,7 +83,7 @@ backends:
     max_retries: 2
   ruoli:
     enabled: false
-    priority: 6
+    priority: 7
     base_url: ${RUOLI_ENDPOINT:https://api.ruoli.dev/v1}
     api_key: ${RUOLI_API_KEY:}
     models:
@@ -107,6 +107,17 @@ backends:
     timeout: 120.0
     stream_timeout: 600.0
     max_retries: 1
+  anyrouter-cn:
+    name: anyrouter-cn
+    base_url: https://a-ocnfniawgw.cn-shanghai.fcapp.run
+    api_format: openai
+    api_keys:
+    - sk-ArDdLwVQMfh5AjPdzrx74Uh5WXmMSkGB0qksrjRnMjfHWHpe
+    enabled: false
+    priority: 2
+    timeout: 60.0
+    stream_timeout: 300.0
+    max_retries: 2
 model_routing:
   claude-sonnet-4.5:
     enabled: true
@@ -128,15 +139,15 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-pro-high
     fallback_on:
-    - 504
     - 429
+    - timeout
+    - connection_error
     - 403
     - 500
+    - unavailable
     - 502
     - 503
-    - connection_error
-    - unavailable
-    - timeout
+    - 504
   claude-opus-4.5:
     enabled: true
     backends:
@@ -157,15 +168,15 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-flash
     fallback_on:
-    - 504
     - 429
+    - timeout
+    - connection_error
     - 403
     - 500
+    - unavailable
     - 502
     - 503
-    - connection_error
-    - unavailable
-    - timeout
+    - 504
   claude-opus-4-5:
     enabled: true
     backends:
@@ -186,15 +197,15 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-pro-high
     fallback_on:
-    - 504
     - 429
+    - timeout
+    - connection_error
     - 403
     - 500
+    - unavailable
     - 502
     - 503
-    - connection_error
-    - unavailable
-    - timeout
+    - 504
   claude-opus-4.6:
     enabled: true
     backends:
@@ -231,17 +242,17 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-flash
     fallback_on:
-    - 504
     - 429
+    - timeout
+    - connection_error
     - 400
     - 403
     - 500
     - 404
     - 502
     - 503
-    - connection_error
+    - 504
     - unavailable
-    - timeout
   claude-opus-4-6:
     enabled: true
     backends:
@@ -278,17 +289,17 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-pro-high
     fallback_on:
-    - 504
     - 429
+    - timeout
+    - connection_error
     - 400
     - 403
     - 500
     - 404
     - 502
     - 503
-    - connection_error
+    - 504
     - unavailable
-    - timeout
   claude-sonnet-4.6:
     enabled: true
     backends:
@@ -309,15 +320,15 @@ model_routing:
     - backend: copilot
       model: claude-sonnet-4.5
     fallback_on:
-    - 504
     - 429
+    - timeout
+    - connection_error
     - 403
     - 500
+    - unavailable
     - 502
     - 503
-    - connection_error
-    - unavailable
-    - timeout
+    - 504
   claude-sonnet-4-6:
     enabled: true
     backends:
@@ -338,15 +349,15 @@ model_routing:
     - backend: copilot
       model: claude-sonnet-4-5
     fallback_on:
-    - 504
     - 429
+    - timeout
+    - connection_error
     - 403
     - 500
+    - unavailable
     - 502
     - 503
-    - connection_error
-    - unavailable
-    - timeout
+    - 504
   gemini-3-flash:
     enabled: true
     backends:
@@ -357,15 +368,15 @@ model_routing:
     - backend: antigravity-tools
       model: gemini-3-flash
     fallback_on:
-    - 504
     - 429
+    - timeout
+    - connection_error
     - 403
     - 500
+    - unavailable
     - 502
     - 503
-    - connection_error
-    - unavailable
-    - timeout
+    - 504
   gemini-3.1-pro:
     enabled: true
     backends:
@@ -375,13 +386,13 @@ model_routing:
       model: gemini-3.1-pro
     fallback_on:
     - 429
+    - timeout
+    - connection_error
     - 403
     - 500
+    - unavailable
     - 502
     - 503
-    - connection_error
-    - unavailable
-    - timeout
   gemini-3.1-pro-high:
     enabled: true
     backends:
@@ -391,13 +402,13 @@ model_routing:
       model: gemini-3.1-pro-high
     fallback_on:
     - 429
+    - timeout
+    - connection_error
     - 403
     - 500
+    - unavailable
     - 502
     - 503
-    - connection_error
-    - unavailable
-    - timeout
   gemini-3.1-pro-low:
     enabled: true
     backends:
@@ -407,13 +418,13 @@ model_routing:
       model: gemini-3.1-pro-low
     fallback_on:
     - 429
+    - timeout
+    - connection_error
     - 403
     - 500
+    - unavailable
     - 502
     - 503
-    - connection_error
-    - unavailable
-    - timeout
   claude-haiku-4.5:
     enabled: true
     backends:
@@ -426,14 +437,14 @@ model_routing:
     - backend: gcli2api-antigravity
       model: gemini-3-flash
     fallback_on:
-    - 504
+    - timeout
     - 429
+    - connection_error
+    - unavailable
     - 500
     - 502
     - 503
-    - connection_error
-    - unavailable
-    - timeout
+    - 504
 backend_capabilities:
   zerogravity:
     include_patterns:

@@ -253,6 +253,30 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        // [NEW 2026-03-17] Fetch models from backend's /models endpoint
+        fetchingModels: {},  // { backendKey: true/false }
+
+        async fetchBackendModels(key) {
+            this.fetchingModels[key] = true;
+            this.fetchingModels = { ...this.fetchingModels };  // trigger reactivity
+            try {
+                const data = await this._fetch(`/api/panel/backends/${key}/fetch-models`, {
+                    method: 'POST',
+                });
+                // Update local backend's supported_models
+                const b = this.backends.find(b => b.key === key);
+                if (b) {
+                    b.supported_models = data.models || [];
+                }
+                this.showBanner('success', t('msg.models_fetched', { key, count: data.count }));
+            } catch (e) {
+                this.showBanner('error', t('msg.models_fetch_failed', { key, error: e.message }));
+            } finally {
+                this.fetchingModels[key] = false;
+                this.fetchingModels = { ...this.fetchingModels };
+            }
+        },
+
         toggleExpand(key) {
             this.expandedBackend = this.expandedBackend === key ? null : key;
         },
@@ -491,6 +515,20 @@ document.addEventListener('alpine:init', () => {
                 scid: 'SCID',
             };
             return labels[feature] || feature;
+        },
+
+        // [NEW 2026-03-17] Reset all client settings to defaults
+        async resetClientDefaults() {
+            if (!confirm(t('msg.client_reset_confirm'))) return;
+            try {
+                const data = await this._fetch('/api/panel/clients/reset-defaults', {
+                    method: 'POST',
+                });
+                this.clientSettings = data.clients || {};
+                this.showBanner('success', t('msg.client_reset_success'));
+            } catch (e) {
+                this.showBanner('error', t('msg.client_reset_failed', { error: e.message }));
+            }
         },
 
         featureTooltip(feature) {
